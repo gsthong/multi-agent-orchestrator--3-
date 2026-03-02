@@ -166,7 +166,7 @@ If PDF input: Open with: [📄 Document context active: {filename}]. Always cite
       }
 
       const stream = await ai.models.generateContentStream({
-        model: 'gemini-2.5-pro-preview-06-05',
+        model: 'gemini-2.5-pro',
         contents: parts,
         config: { systemInstruction }
       });
