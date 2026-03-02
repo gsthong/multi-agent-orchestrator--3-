@@ -3,6 +3,7 @@ import { ChatPanel } from './components/ChatPanel';
 import { AgentDebateView } from './components/AgentDebateView';
 import { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI } from '@google/genai';
+import OpenAI from 'openai';
 
 export type Message = {
   role: 'system' | 'user';
@@ -14,8 +15,14 @@ export type Message = {
 
 export default function App() {
   const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_api_key') || '');
-  const [showApiKeyModal, setShowApiKeyModal] = useState(!localStorage.getItem('gemini_api_key'));
-  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [groqApiKey, setGroqApiKey] = useState(localStorage.getItem('groq_api_key') || '');
+  const [togetherApiKey, setTogetherApiKey] = useState(localStorage.getItem('together_api_key') || '');
+
+  const [showApiKeyModal, setShowApiKeyModal] = useState(!apiKey || !groqApiKey || !togetherApiKey);
+
+  const [apiKeyInput, setApiKeyInput] = useState(apiKey);
+  const [groqKeyInput, setGroqKeyInput] = useState(groqApiKey);
+  const [togetherKeyInput, setTogetherKeyInput] = useState(togetherApiKey);
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [debateRound, setDebateRound] = useState(0);
@@ -72,13 +79,17 @@ export default function App() {
   const handleUserMessage = async (content: string, isVoice: boolean = false) => {
     if (isProcessing) return;
 
+    if (!apiKey || !groqApiKey || !togetherApiKey) {
+      setShowApiKeyModal(true);
+      return;
+    }
+
     // Empty or gibberish check
     if (!content.trim()) {
       setMessages(prev => [...prev, { role: 'system', content: 'I received an empty or unclear input. Could you rephrase?' }]);
       return;
     }
 
-    // Memory hints
     const lowerContent = content.toLowerCase();
     let currentImage = activeImage;
     let currentPdf = activePdf;
@@ -92,6 +103,7 @@ export default function App() {
     }
 
     setIsProcessing(true);
+    setDebateRound(1);
 
     // Add user message
     const newUserMsg: Message = { role: 'user', content, isVoice };
@@ -99,24 +111,14 @@ export default function App() {
     if (currentImage) newUserMsg.imageContext = `[🖼️ Image received: ${currentImage.name}]`;
     if (currentPdf) newUserMsg.pdfContext = `[📄 Document context active: ${currentPdf.name}]`;
 
-    setMessages(prev => [...prev, newUserMsg]);
+    setMessages(prev => [...prev, newUserMsg, { role: 'system', content: '' }]);
     setTurnCount(prev => prev + 1);
 
-    // Auto-summarize after 10 turns
-    if (turnCount > 0 && turnCount % 10 === 0) {
-      setMessages(prev => [...prev, {
-        role: 'system',
-        content: `[📋 Session summary: We have discussed the multi-agent architecture and integrated voice/image inputs. You are currently testing the error recovery protocols.]`
-      }]);
-    }
-
     try {
-      if (!apiKey) {
-        throw new Error('API_KEY missing. Please set your Gemini API Key using the button in the header.');
-      }
-
-      const ai = new GoogleGenAI({ apiKey });
-
+      // -----------------------------------------------------
+      // ROUND 1: GEMINI-PRIME (Lead Analyst / Multimodal)
+      // -----------------------------------------------------
+      const geminiClient = new GoogleGenAI({ apiKey });
       const parts: any[] = [{ text: content }];
 
       if (currentImage) {
@@ -142,54 +144,106 @@ export default function App() {
         parts.unshift({ text: `[🎤 VOICE INPUT DETECTED]\n` });
       }
 
-      const systemInstruction = `You are GEMINI-PRIME, the lead AI agent in a multi-agent orchestration system.
-You simulate 3 agents in a structured internal debate before every response.
+      const geminiInstruction = `You are GEMINI-PRIME, the lead analyst. Provide ONLY an INITIAL ANALYSIS of the user's prompt (and any attached image/PDF). Be academic, visionary, and highly structured mapping out core concepts. Do not attempt to complete the prompt fully; analyze the objective.`;
 
-AGENT PERSONAS
-🧠 GEMINI-PRIME → Academic, Visionary, Structured. Lead analyst.
-⚔️ DEEPSEEK     → Skeptical, Direct, Zero fluff. Critical thinker.
-🔗 LLAMA        → Pragmatic, Decisive, Human-centric. Synthesizer.
-
-If user prompt is ambiguous → ALL 3 agents list their Top 3 Interpretations FIRST.
-
-MANDATORY RESPONSE FORMAT:
-🔵 ROUND 1 — INITIAL ANALYSIS (GEMINI-PRIME)
-🟡 ROUND 2 — CRITIQUE & DEBATE (DEEPSEEK & GEMINI-PRIME REBUTTAL)
-🟢 ROUND 3 — SYNTHESIS (LLAMA)
-✅ FINAL OUTPUT
-
-If voice input: Do NOT run full 3-round format visibly — compress to internal reasoning only. Output structure for voice: [ANSWER] only, no round headers. Start with 1-sentence acknowledgment.
-If image input: Open with: [🖼️ Image received: {5-word description}]. After analysis append: "Follow-up you might want to ask: [question]".
-If PDF input: Open with: [📄 Document context active: {filename}]. Always cite.`;
-
-      // Add a placeholder for the streaming response
-      setMessages(prev => [...prev, { role: 'system', content: '' }]);
-
-      if (!isVoice) {
-        setDebateRound(1);
-      } else {
-        setDebateRound(0);
-      }
-
-      const stream = await ai.models.generateContentStream({
+      const geminiStream = await geminiClient.models.generateContentStream({
         model: 'gemini-2.5-flash',
         contents: parts,
-        config: { systemInstruction }
+        config: { systemInstruction: geminiInstruction }
       });
 
-      let fullResponse = '';
-      for await (const chunk of stream) {
+      let r1Output = '🔵 ROUND 1 — INITIAL ANALYSIS (GEMINI-PRIME)\n\n';
+
+      setMessages(prev => {
+        const newMessages = [...prev];
+        newMessages[newMessages.length - 1].content = r1Output;
+        return newMessages;
+      });
+
+      for await (const chunk of geminiStream) {
         const text = chunk.text ?? '';
-        fullResponse += text;
-
-        if (text.includes('🔵 ROUND 1')) setDebateRound(1);
-        if (text.includes('🟡 ROUND 2')) setDebateRound(2);
-        if (text.includes('🟢 ROUND 3')) setDebateRound(3);
-        if (text.includes('✅ FINAL')) setDebateRound(0);
-
+        r1Output += text;
         setMessages(prev => {
           const newMessages = [...prev];
-          newMessages[newMessages.length - 1].content = fullResponse;
+          newMessages[newMessages.length - 1].content = r1Output;
+          return newMessages;
+        });
+      }
+
+      // -----------------------------------------------------
+      // ROUND 2: DEEPSEEK (Critique via Together AI)
+      // -----------------------------------------------------
+      setDebateRound(2);
+
+      const togetherClient = new OpenAI({
+        apiKey: togetherApiKey,
+        baseURL: 'https://api.together.xyz/v1',
+        dangerouslyAllowBrowser: true
+      });
+
+      let r2Output = r1Output + '\n\n---\n\n🟡 ROUND 2 — CRITIQUE (DEEPSEEK)\n\n';
+
+      setMessages(prev => {
+        const newMessages = [...prev];
+        newMessages[newMessages.length - 1].content = r2Output;
+        return newMessages;
+      });
+
+      const deepseekStream = await togetherClient.chat.completions.create({
+        model: 'deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free',
+        messages: [
+          { role: 'system', content: 'You are DEEPSEEK, a skeptical, direct, zero-fluff critical thinker. Critique the initial analysis provided by the lead analyst (Gemini) against the User Prompt. Point out flaws, assumptions, or over-complications. Output ONLY your critique.' },
+          { role: 'user', content: `USER PROMPT:\n${content}\n\nGEMINI ANALYSIS:\n${r1Output}` }
+        ],
+        stream: true,
+      });
+
+      let r2ActualContent = '';
+      for await (const chunk of deepseekStream) {
+        const text = chunk.choices[0]?.delta?.content || '';
+        r2ActualContent += text;
+        r2Output += text;
+        setMessages(prev => {
+          const newMessages = [...prev];
+          newMessages[newMessages.length - 1].content = r2Output;
+          return newMessages;
+        });
+      }
+
+      // -----------------------------------------------------
+      // ROUND 3: LLAMA (Synthesis via Groq)
+      // -----------------------------------------------------
+      setDebateRound(3);
+
+      const groqClient = new OpenAI({
+        apiKey: groqApiKey,
+        baseURL: 'https://api.groq.com/openai/v1',
+        dangerouslyAllowBrowser: true
+      });
+
+      let r3Output = r2Output + '\n\n---\n\n🟢 ROUND 3 — SYNTHESIS & ✅ FINAL OUTPUT (LLAMA)\n\n';
+
+      setMessages(prev => {
+        const newMessages = [...prev];
+        newMessages[newMessages.length - 1].content = r3Output;
+        return newMessages;
+      });
+
+      const llamaStream = await groqClient.chat.completions.create({
+        model: 'llama-3.3-70b-versatile',
+        messages: [
+          { role: 'system', content: 'You are LLAMA, a pragmatic, decisive, and human-centric synthesizer. Read the User Prompt, Gemini\'s initial analysis, and DeepSeek\'s critique. Synthesize the debate and provide the final, complete answer or action directly addressing the User.' },
+          { role: 'user', content: `USER PROMPT:\n${content}\n\nGEMINI ANALYSIS:\n${r1Output}\n\nDEEPSEEK CRITIQUE:\n${r2ActualContent}` }
+        ],
+        stream: true,
+      });
+
+      for await (const chunk of llamaStream) {
+        const text = chunk.choices[0]?.delta?.content || '';
+        r3Output += text;
+        setMessages(prev => {
+          const newMessages = [...prev];
+          newMessages[newMessages.length - 1].content = r3Output;
           return newMessages;
         });
       }
@@ -201,8 +255,7 @@ If PDF input: Open with: [📄 Document context active: {filename}]. Always cite
       console.error(err);
       let errorMsg = err.message || "An unknown error occurred.";
       if (errorMsg.includes('API_KEY')) errorMsg = "Invalid API key";
-      else if (errorMsg.includes('quota')) errorMsg = "Rate limit — try again later";
-      else if (errorMsg.includes('SAFETY')) errorMsg = "Response blocked by safety filter";
+      else if (errorMsg.includes('quota') || errorMsg.includes('429')) errorMsg = "Rate limit hit on one of the APIs — try again later";
 
       setMessages(prev => {
         const newMessages = [...prev];
@@ -244,27 +297,68 @@ If PDF input: Open with: [📄 Document context active: {filename}]. Always cite
       {showApiKeyModal && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
           <div className="bg-zinc-900 border border-zinc-700 p-6 rounded-xl w-[400px] shadow-2xl">
-            <h2 className="text-lg font-bold text-zinc-100 mb-2">Welcome to GEMINI-PRIME</h2>
-            <p className="text-sm text-zinc-400 mb-4">Please enter your Gemini API Key to continue. It will be stored securely in your browser's local storage.</p>
-            <input
-              type="password"
-              placeholder="AIzaSy..."
-              value={apiKeyInput}
-              onChange={(e) => setApiKeyInput(e.target.value)}
-              className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-blue-500 mb-4"
-            />
-            <div className="flex justify-end">
+            <h2 className="text-lg font-bold text-zinc-100 mb-2">Welcome to Multi-Agent Pro</h2>
+            <p className="text-sm text-zinc-400 mb-4">Please enter your API Keys to continue. They are stored securely in your browser's local storage.</p>
+
+            <div className="space-y-3 mb-6">
+              <div>
+                <label className="text-xs text-zinc-400 font-medium mb-1 block">Google Gemini API Key (Gemini-Prime)</label>
+                <input
+                  type="password"
+                  placeholder="AIzaSy..."
+                  value={apiKeyInput}
+                  onChange={(e) => setApiKeyInput(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-zinc-400 font-medium mb-1 block">Together AI API Key (DeepSeek)</label>
+                <input
+                  type="password"
+                  placeholder="Bearer..."
+                  value={togetherKeyInput}
+                  onChange={(e) => setTogetherKeyInput(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-zinc-400 font-medium mb-1 block">Groq API Key (Llama 3)</label>
+                <input
+                  type="password"
+                  placeholder="gsk_..."
+                  value={groqKeyInput}
+                  onChange={(e) => setGroqKeyInput(e.target.value)}
+                  className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setShowApiKeyModal(false)}
+                className="hover:bg-zinc-800 text-zinc-300 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                Cancel
+              </button>
               <button
                 onClick={() => {
                   if (apiKeyInput.trim()) {
                     localStorage.setItem('gemini_api_key', apiKeyInput.trim());
                     setApiKey(apiKeyInput.trim());
-                    setShowApiKeyModal(false);
                   }
+                  if (groqKeyInput.trim()) {
+                    localStorage.setItem('groq_api_key', groqKeyInput.trim());
+                    setGroqApiKey(groqKeyInput.trim());
+                  }
+                  if (togetherKeyInput.trim()) {
+                    localStorage.setItem('together_api_key', togetherKeyInput.trim());
+                    setTogetherApiKey(togetherKeyInput.trim());
+                  }
+                  setShowApiKeyModal(false);
                 }}
                 className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
               >
-                Save API Key
+                Save Keys
               </button>
             </div>
           </div>
@@ -277,11 +371,20 @@ If PDF input: Open with: [📄 Document context active: {filename}]. Always cite
       />
       <div className="flex flex-col flex-1">
         <header className="h-14 border-b border-zinc-800 flex items-center px-4 shrink-0 bg-zinc-900/50">
-          <h1 className="text-sm font-medium tracking-wide text-zinc-300">GEMINI-PRIME ORCHESTRATOR</h1>
+          <h1 className="text-sm font-medium tracking-wide text-zinc-300">MULTI-AGENT ORCHESTRATOR</h1>
           <div className="ml-auto flex items-center gap-3">
             <button onClick={handleClearChat} className="text-xs font-medium text-zinc-400 hover:text-white px-3 py-1.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 transition">Clear</button>
             <button onClick={handleExportChat} className="text-xs font-medium text-zinc-400 hover:text-white px-3 py-1.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 transition">Export Chat</button>
-            <button onClick={() => { setApiKeyInput(''); setShowApiKeyModal(true); }} className="text-xs font-medium text-zinc-400 hover:text-white px-3 py-1.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 transition flex items-center gap-1">🔑 API Key</button>
+            <button onClick={() => {
+              setApiKeyInput(apiKey);
+              setGroqKeyInput(groqApiKey);
+              setTogetherKeyInput(togetherApiKey);
+              setShowApiKeyModal(true);
+            }}
+              className="text-xs font-medium text-zinc-400 hover:text-white px-3 py-1.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 transition flex items-center gap-1"
+            >
+              🔑 API Keys
+            </button>
             <span className="w-px h-4 bg-zinc-700 mx-1"></span>
 
             <span className="flex h-2 w-2 relative">
