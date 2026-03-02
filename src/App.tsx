@@ -13,6 +13,10 @@ export type Message = {
 };
 
 export default function App() {
+  const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_api_key') || '');
+  const [showApiKeyModal, setShowApiKeyModal] = useState(!localStorage.getItem('gemini_api_key'));
+  const [apiKeyInput, setApiKeyInput] = useState('');
+
   const [isProcessing, setIsProcessing] = useState(false);
   const [debateRound, setDebateRound] = useState(0);
   const [messages, setMessages] = useState<Message[]>([
@@ -35,9 +39,39 @@ export default function App() {
     scrollToBottom();
   }, [messages]);
 
+  const handleClearChat = () => {
+    setMessages([
+      {
+        role: 'system',
+        content: 'Agent GEMINI-PRIME initialized. Awaiting input for multi-agent analysis.'
+      }
+    ]);
+    setTurnCount(0);
+    setActiveImage(null);
+    setActivePdf(null);
+    setActivePdfText('');
+  };
+
+  const handleExportChat = () => {
+    const timestamp = new Date().toISOString().replace(/T/, ' ').replace(/\..+/, '');
+    let md = `# GEMINI-PRIME Session Export\n## [${timestamp}]\n\n`;
+    messages.forEach(msg => {
+      md += `**${msg.role === 'user' ? 'USER' : 'AGENT'}:**\n${msg.content}\n\n---\n\n`;
+    });
+    const blob = new Blob([md], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `chat-export-${new Date().toISOString().split('T')[0]}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const handleUserMessage = async (content: string, isVoice: boolean = false) => {
     if (isProcessing) return;
-    
+
     // Empty or gibberish check
     if (!content.trim()) {
       setMessages(prev => [...prev, { role: 'system', content: 'I received an empty or unclear input. Could you rephrase?' }]);
@@ -58,27 +92,31 @@ export default function App() {
     }
 
     setIsProcessing(true);
-    
+
     // Add user message
     const newUserMsg: Message = { role: 'user', content, isVoice };
-    
+
     if (currentImage) newUserMsg.imageContext = `[🖼️ Image received: ${currentImage.name}]`;
     if (currentPdf) newUserMsg.pdfContext = `[📄 Document context active: ${currentPdf.name}]`;
-    
+
     setMessages(prev => [...prev, newUserMsg]);
     setTurnCount(prev => prev + 1);
 
     // Auto-summarize after 10 turns
     if (turnCount > 0 && turnCount % 10 === 0) {
-      setMessages(prev => [...prev, { 
-        role: 'system', 
-        content: `[📋 Session summary: We have discussed the multi-agent architecture and integrated voice/image inputs. You are currently testing the error recovery protocols.]` 
+      setMessages(prev => [...prev, {
+        role: 'system',
+        content: `[📋 Session summary: We have discussed the multi-agent architecture and integrated voice/image inputs. You are currently testing the error recovery protocols.]`
       }]);
     }
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-      
+      if (!apiKey) {
+        throw new Error('API_KEY missing. Please set your Gemini API Key using the button in the header.');
+      }
+
+      const ai = new GoogleGenAI({ apiKey });
+
       const parts: any[] = [{ text: content }];
 
       if (currentImage) {
@@ -120,17 +158,16 @@ If PDF input: Open with: [📄 Document context active: {filename}]. Always cite
 
       // Add a placeholder for the streaming response
       setMessages(prev => [...prev, { role: 'system', content: '' }]);
-      
-      // We simulate the rounds visually in the UI while the stream is happening
+
       if (!isVoice) {
         setDebateRound(1);
-        setTimeout(() => setDebateRound(2), 2000);
-        setTimeout(() => setDebateRound(3), 4000);
+      } else {
+        setDebateRound(0);
       }
 
       const stream = await ai.models.generateContentStream({
         model: 'gemini-2.5-pro-preview-06-05',
-        contents: { parts },
+        contents: parts,
         config: { systemInstruction }
       });
 
@@ -138,6 +175,12 @@ If PDF input: Open with: [📄 Document context active: {filename}]. Always cite
       for await (const chunk of stream) {
         const text = chunk.text ?? '';
         fullResponse += text;
+
+        if (text.includes('🔵 ROUND 1')) setDebateRound(1);
+        if (text.includes('🟡 ROUND 2')) setDebateRound(2);
+        if (text.includes('🟢 ROUND 3')) setDebateRound(3);
+        if (text.includes('✅ FINAL')) setDebateRound(0);
+
         setMessages(prev => {
           const newMessages = [...prev];
           newMessages[newMessages.length - 1].content = fullResponse;
@@ -154,7 +197,7 @@ If PDF input: Open with: [📄 Document context active: {filename}]. Always cite
       if (errorMsg.includes('API_KEY')) errorMsg = "Invalid API key";
       else if (errorMsg.includes('quota')) errorMsg = "Rate limit — try again later";
       else if (errorMsg.includes('SAFETY')) errorMsg = "Response blocked by safety filter";
-      
+
       setMessages(prev => {
         const newMessages = [...prev];
         if (newMessages[newMessages.length - 1].content === '') {
@@ -172,9 +215,9 @@ If PDF input: Open with: [📄 Document context active: {filename}]. Always cite
   const handleImageUpload = (file: File) => {
     setActiveImage(file);
     if (file) {
-      setMessages(prev => [...prev, { 
-        role: 'system', 
-        content: `[🖼️ Image received: a visual representation of the UI]\nWhat would you like to know about this image?` 
+      setMessages(prev => [...prev, {
+        role: 'system',
+        content: `[🖼️ Image received: ${file.name}]\nWhat would you like to know about this image?`
       }]);
     }
   };
@@ -183,24 +226,58 @@ If PDF input: Open with: [📄 Document context active: {filename}]. Always cite
     setActivePdf(file);
     setActivePdfText(text || '');
     if (file) {
-      setMessages(prev => [...prev, { 
-        role: 'system', 
-        content: `[📄 Document context active: ${file.name}]\nI have loaded the document. What specific information are you looking for?` 
+      setMessages(prev => [...prev, {
+        role: 'system',
+        content: `[📄 Document context active: ${file.name}]\nI have loaded the document. What specific information are you looking for?`
       }]);
     }
   };
 
   return (
-    <div className="flex h-screen bg-zinc-950 text-zinc-50 font-sans overflow-hidden">
-      <Sidebar 
-        onVoiceInput={(text) => handleUserMessage(text, true)} 
-        onImageUpload={handleImageUpload} 
+    <div className="flex h-screen bg-zinc-950 text-zinc-50 font-sans overflow-hidden relative">
+      {showApiKeyModal && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="bg-zinc-900 border border-zinc-700 p-6 rounded-xl w-[400px] shadow-2xl">
+            <h2 className="text-lg font-bold text-zinc-100 mb-2">Welcome to GEMINI-PRIME</h2>
+            <p className="text-sm text-zinc-400 mb-4">Please enter your Gemini API Key to continue. It will be stored securely in your browser's local storage.</p>
+            <input
+              type="password"
+              placeholder="AIzaSy..."
+              value={apiKeyInput}
+              onChange={(e) => setApiKeyInput(e.target.value)}
+              className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-blue-500 mb-4"
+            />
+            <div className="flex justify-end">
+              <button
+                onClick={() => {
+                  if (apiKeyInput.trim()) {
+                    localStorage.setItem('gemini_api_key', apiKeyInput.trim());
+                    setApiKey(apiKeyInput.trim());
+                    setShowApiKeyModal(false);
+                  }
+                }}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
+                Save API Key
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      <Sidebar
+        onVoiceInput={(text) => handleUserMessage(text, true)}
+        onImageUpload={handleImageUpload}
         onPdfUpload={handlePdfUpload}
       />
       <div className="flex flex-col flex-1">
         <header className="h-14 border-b border-zinc-800 flex items-center px-4 shrink-0 bg-zinc-900/50">
           <h1 className="text-sm font-medium tracking-wide text-zinc-300">GEMINI-PRIME ORCHESTRATOR</h1>
           <div className="ml-auto flex items-center gap-3">
+            <button onClick={handleClearChat} className="text-xs font-medium text-zinc-400 hover:text-white px-3 py-1.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 transition">Clear</button>
+            <button onClick={handleExportChat} className="text-xs font-medium text-zinc-400 hover:text-white px-3 py-1.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 transition">Export Chat</button>
+            <button onClick={() => { setApiKeyInput(''); setShowApiKeyModal(true); }} className="text-xs font-medium text-zinc-400 hover:text-white px-3 py-1.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 transition flex items-center gap-1">🔑 API Key</button>
+            <span className="w-px h-4 bg-zinc-700 mx-1"></span>
+
             <span className="flex h-2 w-2 relative">
               <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${isProcessing ? 'bg-orange-400' : 'bg-emerald-400'} opacity-75`}></span>
               <span className={`relative inline-flex rounded-full h-2 w-2 ${isProcessing ? 'bg-orange-500' : 'bg-emerald-500'}`}></span>
@@ -211,10 +288,10 @@ If PDF input: Open with: [📄 Document context active: {filename}]. Always cite
           </div>
         </header>
         <main className="flex-1 flex overflow-hidden">
-          <ChatPanel 
+          <ChatPanel
             messages={messages}
-            onSendMessage={(msg) => handleUserMessage(msg, false)} 
-            isProcessing={isProcessing} 
+            onSendMessage={(msg) => handleUserMessage(msg, false)}
+            isProcessing={isProcessing}
             messagesEndRef={messagesEndRef}
           />
           <AgentDebateView round={debateRound} isProcessing={isProcessing} />

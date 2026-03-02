@@ -23,7 +23,7 @@ export function ChatPanel({ messages, onSendMessage, isProcessing, messagesEndRe
             <div className={`text-sm p-3 rounded-lg border max-w-[80%] whitespace-pre-wrap ${
               msg.role === 'user' 
                 ? 'bg-blue-500/10 border-blue-500/20 text-blue-100' 
-                : 'bg-zinc-900/50 border-zinc-800/50 text-zinc-300'
+                : 'bg-zinc-900/50 border-zinc-800/50 text-zinc-300 w-full'
             }`}>
               {msg.isVoice && (
                 <div className="flex items-center gap-1 text-emerald-400 mb-1 font-semibold text-xs">
@@ -40,7 +40,14 @@ export function ChatPanel({ messages, onSendMessage, isProcessing, messagesEndRe
                   {msg.pdfContext}
                 </div>
               )}
-              {msg.content}
+              {msg.role === 'system' ? (
+                <div 
+                  className="prose prose-invert max-w-none break-words" 
+                  dangerouslySetInnerHTML={{ __html: (window as any).marked ? (window as any).marked.parse(msg.content) : msg.content }} 
+                />
+              ) : (
+                msg.content
+              )}
             </div>
           </div>
         ))}

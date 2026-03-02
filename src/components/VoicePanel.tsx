@@ -3,6 +3,7 @@ import { useState, useRef } from 'react';
 
 export function VoicePanel({ onVoiceInput }: { onVoiceInput?: (text: string) => void }) {
   const [isRecording, setIsRecording] = useState(false);
+  const [language, setLanguage] = useState<'vi-VN' | 'en-US'>('vi-VN');
   const recognitionRef = useRef<any>(null);
 
   const handleToggleRecord = () => {
@@ -17,23 +18,23 @@ export function VoicePanel({ onVoiceInput }: { onVoiceInput?: (text: string) => 
         alert("Speech recognition is not supported in this browser.");
         return;
       }
-      
+
       const recognition = new SpeechRecognition();
       recognition.continuous = false;
       recognition.interimResults = false;
-      recognition.lang = 'en-US'; // Default to EN, could be vi-VN
-      
+      recognition.lang = language;
+
       recognition.onresult = (e: any) => {
         const transcript = Array.from(e.results).map((r: any) => r[0].transcript).join('');
         onVoiceInput?.(transcript);
         setIsRecording(false);
       };
-      
+
       recognition.onerror = (e: any) => {
         console.error("Speech recognition error", e);
         setIsRecording(false);
       };
-      
+
       recognition.onend = () => {
         setIsRecording(false);
       };
@@ -58,15 +59,21 @@ export function VoicePanel({ onVoiceInput }: { onVoiceInput?: (text: string) => 
           </span>
         )}
       </div>
-      
+
       <div className="flex gap-2">
-        <button 
+        <button
+          onClick={() => setLanguage(lang => lang === 'vi-VN' ? 'en-US' : 'vi-VN')}
+          className="flex-shrink-0 flex items-center justify-center gap-1 px-3 py-2 rounded-md text-xs font-medium bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition-colors"
+          title="Toggle Language"
+        >
+          {language === 'vi-VN' ? '🇻🇳 VI' : '🇺🇸 EN'}
+        </button>
+        <button
           onClick={handleToggleRecord}
-          className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-xs font-medium transition-colors ${
-            isRecording 
-              ? 'bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20' 
+          className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-md text-xs font-medium transition-colors ${isRecording
+              ? 'bg-red-500/10 text-red-500 border border-red-500/20 hover:bg-red-500/20'
               : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
-          }`}
+            }`}
         >
           {isRecording ? <Square size={14} /> : <Mic size={14} />}
           {isRecording ? 'Stop' : 'Record'}

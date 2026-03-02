@@ -1,1 +1,40 @@
 @import "tailwindcss";
+
+@layer components {
+  .prose h1, .prose h2, .prose h3, .prose h4 {
+    @apply font-bold mt-4 mb-2 text-zinc-100;
+  }
+  .prose p {
+    @apply mb-3 leading-relaxed;
+  }
+  .prose p:last-child {
+    @apply mb-0;
+  }
+  .prose ul, .prose ol {
+    @apply list-disc list-inside mb-3 space-y-1;
+  }
+  .prose code {
+    @apply bg-zinc-800 text-zinc-200 px-1.5 py-0.5 rounded text-xs font-mono;
+  }
+  .prose pre {
+    @apply bg-zinc-900 p-3 rounded-lg overflow-x-auto my-3 border border-zinc-800;
+  }
+  .prose pre code {
+    @apply bg-transparent p-0 text-zinc-300 text-sm;
+  }
+  .prose strong {
+    @apply font-bold text-zinc-100;
+  }
+  .prose table {
+    @apply w-full border-collapse my-3 text-sm;
+  }
+  .prose th, .prose td {
+    @apply border border-zinc-700 px-3 py-2 text-left;
+  }
+  .prose th {
+    @apply bg-zinc-800/50 font-medium;
+  }
+  .prose a {
+    @apply text-blue-400 hover:text-blue-300 underline;
+  }
+}
