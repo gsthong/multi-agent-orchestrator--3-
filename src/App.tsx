@@ -129,7 +129,13 @@ export default function App() {
       }
 
       if (currentPdf) {
-        parts.unshift({ text: `[📄 DOCUMENT CONTEXT ACTIVE]\nDocument Name: ${currentPdf.name}\nDocument Content:\n${activePdfText}\n\n` });
+        const pdfBase64 = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.readAsDataURL(currentPdf!);
+          reader.onload = () => resolve((reader.result as string).split(',')[1]);
+        });
+        parts.unshift({ inlineData: { mimeType: 'application/pdf', data: pdfBase64 } });
+        parts.unshift({ text: `[📄 DOCUMENT CONTEXT ACTIVE]\nDocument Name: ${currentPdf.name}\n\n` });
       }
 
       if (isVoice) {
