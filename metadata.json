@@ -1,0 +1,5 @@
+{
+  "name": "Multi-Agent Orchestrator",
+  "description": "UI for a multi-agent collaborative system featuring Gemini, DeepSeek, and Llama.",
+  "requestFramePermissions": ["microphone"]
+}
