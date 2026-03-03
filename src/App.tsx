@@ -3,7 +3,6 @@ import { ChatPanel } from './components/ChatPanel';
 import { AgentDebateView } from './components/AgentDebateView';
 import { useState, useRef, useEffect } from 'react';
 import { GoogleGenAI } from '@google/genai';
-import OpenAI from 'openai';
 
 export type Message = {
   role: 'system' | 'user';
@@ -13,23 +12,70 @@ export type Message = {
   pdfContext?: string;
 };
 
+async function streamGroqRequest(model: string, apiKey: string, systemPrompt: string, userPrompt: string, onToken: (t: string) => void) {
+  const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      stream: true
+    })
+  });
+
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Groq API Error (${res.status}): ${errorText}`);
+  }
+
+  const reader = res.body?.getReader();
+  const decoder = new TextDecoder();
+  if (!reader) return;
+
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || '';
+    for (const line of lines) {
+      if (line.trim().startsWith('data: ')) {
+        const dataStr = line.trim().slice(6);
+        if (dataStr === '[DONE]') continue;
+        try {
+          const data = JSON.parse(dataStr);
+          const text = data.choices[0]?.delta?.content || '';
+          if (text) onToken(text);
+        } catch (e) {
+          // Ignore partial parse
+        }
+      }
+    }
+  }
+}
+
 export default function App() {
   const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_api_key') || '');
   const [groqApiKey, setGroqApiKey] = useState(localStorage.getItem('groq_api_key') || '');
-  const [togetherApiKey, setTogetherApiKey] = useState(localStorage.getItem('together_api_key') || '');
 
-  const [showApiKeyModal, setShowApiKeyModal] = useState(!apiKey || !groqApiKey || !togetherApiKey);
+  const [showApiKeyModal, setShowApiKeyModal] = useState(!apiKey || !groqApiKey);
 
   const [apiKeyInput, setApiKeyInput] = useState(apiKey);
   const [groqKeyInput, setGroqKeyInput] = useState(groqApiKey);
-  const [togetherKeyInput, setTogetherKeyInput] = useState(togetherApiKey);
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [debateRound, setDebateRound] = useState(0);
   const [messages, setMessages] = useState<Message[]>([
     {
       role: 'system',
-      content: 'Agent GEMINI-PRIME initialized. Awaiting input for multi-agent analysis.'
+      content: 'Agent GEMINI-PRIME initialized. Awaiting input for multi-agent synthesis.'
     }
   ]);
   const [activeImage, setActiveImage] = useState<File | null>(null);
@@ -50,7 +96,7 @@ export default function App() {
     setMessages([
       {
         role: 'system',
-        content: 'Agent GEMINI-PRIME initialized. Awaiting input for multi-agent analysis.'
+        content: 'Agent GEMINI-PRIME initialized. Awaiting input for multi-agent synthesis.'
       }
     ]);
     setTurnCount(0);
@@ -79,12 +125,11 @@ export default function App() {
   const handleUserMessage = async (content: string, isVoice: boolean = false) => {
     if (isProcessing) return;
 
-    if (!apiKey || !groqApiKey || !togetherApiKey) {
+    if (!apiKey || !groqApiKey) {
       setShowApiKeyModal(true);
       return;
     }
 
-    // Empty or gibberish check
     if (!content.trim()) {
       setMessages(prev => [...prev, { role: 'system', content: 'I received an empty or unclear input. Could you rephrase?' }]);
       return;
@@ -105,9 +150,7 @@ export default function App() {
     setIsProcessing(true);
     setDebateRound(1);
 
-    // Add user message
     const newUserMsg: Message = { role: 'user', content, isVoice };
-
     if (currentImage) newUserMsg.imageContext = `[🖼️ Image received: ${currentImage.name}]`;
     if (currentPdf) newUserMsg.pdfContext = `[📄 Document context active: ${currentPdf.name}]`;
 
@@ -116,7 +159,7 @@ export default function App() {
 
     try {
       // -----------------------------------------------------
-      // ROUND 1: GEMINI-PRIME (Lead Analyst / Multimodal)
+      // ROUND 1: GEMINI-PRIME (Lead Analyst)
       // -----------------------------------------------------
       const geminiClient = new GoogleGenAI({ apiKey });
       const parts: any[] = [{ text: content }];
@@ -171,17 +214,10 @@ export default function App() {
       }
 
       // -----------------------------------------------------
-      // ROUND 2: DEEPSEEK (Critique via Together AI)
+      // ROUND 2: DEEPSEEK (Critique via Groq)
       // -----------------------------------------------------
       setDebateRound(2);
-
-      const togetherClient = new OpenAI({
-        apiKey: togetherApiKey,
-        baseURL: 'https://api.together.xyz/v1',
-        dangerouslyAllowBrowser: true
-      });
-
-      let r2Output = r1Output + '\n\n---\n\n🟡 ROUND 2 — CRITIQUE (DEEPSEEK)\n\n';
+      let r2Output = r1Output + '\n\n---\n\n🟠 ROUND 2 — CRITIQUE (DEEPSEEK)\n\n';
 
       setMessages(prev => {
         const newMessages = [...prev];
@@ -189,39 +225,28 @@ export default function App() {
         return newMessages;
       });
 
-      const deepseekStream = await togetherClient.chat.completions.create({
-        model: 'deepseek-ai/DeepSeek-R1-Distill-Llama-70B-free',
-        messages: [
-          { role: 'system', content: 'You are DEEPSEEK, a skeptical, direct, zero-fluff critical thinker. Critique the initial analysis provided by the lead analyst (Gemini) against the User Prompt. Point out flaws, assumptions, or over-complications. Output ONLY your critique.' },
-          { role: 'user', content: `USER PROMPT:\n${content}\n\nGEMINI ANALYSIS:\n${r1Output}` }
-        ],
-        stream: true,
-      });
-
       let r2ActualContent = '';
-      for await (const chunk of deepseekStream) {
-        const text = chunk.choices[0]?.delta?.content || '';
-        r2ActualContent += text;
-        r2Output += text;
-        setMessages(prev => {
-          const newMessages = [...prev];
-          newMessages[newMessages.length - 1].content = r2Output;
-          return newMessages;
-        });
-      }
+      await streamGroqRequest(
+        'deepseek-r1-distill-llama-70b',
+        groqApiKey,
+        'You are DEEPSEEK, a skeptical, direct, zero-fluff critical thinker. Critique the initial analysis provided by the lead analyst against the User Prompt. Point out flaws, assumptions, or over-complications. Output ONLY your critique.',
+        `USER PROMPT:\n${content}\n\nGEMINI ANALYSIS:\n${r1Output}`,
+        (text) => {
+          r2ActualContent += text;
+          r2Output += text;
+          setMessages(prev => {
+            const newMessages = [...prev];
+            newMessages[newMessages.length - 1].content = r2Output;
+            return newMessages;
+          });
+        }
+      );
 
       // -----------------------------------------------------
-      // ROUND 3: LLAMA (Synthesis via Groq)
+      // ROUND 3: QWEN (Detail Analysis via Groq)
       // -----------------------------------------------------
       setDebateRound(3);
-
-      const groqClient = new OpenAI({
-        apiKey: groqApiKey,
-        baseURL: 'https://api.groq.com/openai/v1',
-        dangerouslyAllowBrowser: true
-      });
-
-      let r3Output = r2Output + '\n\n---\n\n🟢 ROUND 3 — SYNTHESIS & ✅ FINAL OUTPUT (LLAMA)\n\n';
+      let r3Output = r2Output + '\n\n---\n\n🟣 ROUND 3 — SECONDARY CRITIQUE (QWEN)\n\n';
 
       setMessages(prev => {
         const newMessages = [...prev];
@@ -229,24 +254,49 @@ export default function App() {
         return newMessages;
       });
 
-      const llamaStream = await groqClient.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          { role: 'system', content: 'You are LLAMA, a pragmatic, decisive, and human-centric synthesizer. Read the User Prompt, Gemini\'s initial analysis, and DeepSeek\'s critique. Synthesize the debate and provide the final, complete answer or action directly addressing the User.' },
-          { role: 'user', content: `USER PROMPT:\n${content}\n\nGEMINI ANALYSIS:\n${r1Output}\n\nDEEPSEEK CRITIQUE:\n${r2ActualContent}` }
-        ],
-        stream: true,
+      let r3ActualContent = '';
+      await streamGroqRequest(
+        'qwen-2.5-32b',
+        groqApiKey,
+        'You are QWEN, an incredibly thorough detail-oriented analyzer. Review the user prompt, initial analysis, and deepseek critique. Provide a grounded, structured perspective focusing on practical execution and edge cases missed by both prior agents.',
+        `USER PROMPT:\n${content}\n\nGEMINI ANALYSIS:\n${r1Output}\n\nDEEPSEEK CRITIQUE:\n${r2ActualContent}`,
+        (text) => {
+          r3ActualContent += text;
+          r3Output += text;
+          setMessages(prev => {
+            const newMessages = [...prev];
+            newMessages[newMessages.length - 1].content = r3Output;
+            return newMessages;
+          });
+        }
+      );
+
+      // -----------------------------------------------------
+      // ROUND 4: LLAMA (Synthesis via Groq)
+      // -----------------------------------------------------
+      setDebateRound(4);
+      let r4Output = r3Output + '\n\n---\n\n🟢 ROUND 4 — SYNTHESIS & ✅ FINAL OUTPUT (LLAMA)\n\n';
+
+      setMessages(prev => {
+        const newMessages = [...prev];
+        newMessages[newMessages.length - 1].content = r4Output;
+        return newMessages;
       });
 
-      for await (const chunk of llamaStream) {
-        const text = chunk.choices[0]?.delta?.content || '';
-        r3Output += text;
-        setMessages(prev => {
-          const newMessages = [...prev];
-          newMessages[newMessages.length - 1].content = r3Output;
-          return newMessages;
-        });
-      }
+      await streamGroqRequest(
+        'llama-3.3-70b-versatile',
+        groqApiKey,
+        'You are LLAMA, a pragmatic, decisive, and human-centric synthesizer. Read the User Prompt, Gemini\'s initial analysis, DeepSeek\'s critique, and Qwen\'s detailed notes. Synthesize the debate and provide the final, complete answer or action directly addressing the User.',
+        `USER PROMPT:\n${content}\n\nGEMINI ANALYSIS:\n${r1Output}\n\nDEEPSEEK CRITIQUE:\n${r2ActualContent}\n\nQWEN ANALYSIS:\n${r3ActualContent}`,
+        (text) => {
+          r4Output += text;
+          setMessages(prev => {
+            const newMessages = [...prev];
+            newMessages[newMessages.length - 1].content = r4Output;
+            return newMessages;
+          });
+        }
+      );
 
       setDebateRound(0);
       setIsProcessing(false);
@@ -312,17 +362,7 @@ export default function App() {
                 />
               </div>
               <div>
-                <label className="text-xs text-zinc-400 font-medium mb-1 block">Together AI API Key (DeepSeek)</label>
-                <input
-                  type="password"
-                  placeholder="Bearer..."
-                  value={togetherKeyInput}
-                  onChange={(e) => setTogetherKeyInput(e.target.value)}
-                  className="w-full bg-zinc-950 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-zinc-400 font-medium mb-1 block">Groq API Key (Llama 3)</label>
+                <label className="text-xs text-zinc-400 font-medium mb-1 block">Groq API Key (DeepSeek / Qwen / Llama 3)</label>
                 <input
                   type="password"
                   placeholder="gsk_..."
@@ -337,6 +377,7 @@ export default function App() {
               <button
                 onClick={() => setShowApiKeyModal(false)}
                 className="hover:bg-zinc-800 text-zinc-300 px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                disabled={!apiKey || !groqApiKey}
               >
                 Cancel
               </button>
@@ -349,10 +390,6 @@ export default function App() {
                   if (groqKeyInput.trim()) {
                     localStorage.setItem('groq_api_key', groqKeyInput.trim());
                     setGroqApiKey(groqKeyInput.trim());
-                  }
-                  if (togetherKeyInput.trim()) {
-                    localStorage.setItem('together_api_key', togetherKeyInput.trim());
-                    setTogetherApiKey(togetherKeyInput.trim());
                   }
                   setShowApiKeyModal(false);
                 }}
@@ -378,7 +415,6 @@ export default function App() {
             <button onClick={() => {
               setApiKeyInput(apiKey);
               setGroqKeyInput(groqApiKey);
-              setTogetherKeyInput(togetherApiKey);
               setShowApiKeyModal(true);
             }}
               className="text-xs font-medium text-zinc-400 hover:text-white px-3 py-1.5 rounded-lg bg-zinc-800/80 hover:bg-zinc-700 transition flex items-center gap-1"
