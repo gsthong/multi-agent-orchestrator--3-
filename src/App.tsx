@@ -256,7 +256,7 @@ export default function App() {
       await streamGroqRequest(
         'llama-3.3-70b-versatile',
         groqApiKey,
-        'You are the ULTIMATE SYNTHESIZER LLAMA. You read the User Prompt, Gemini\'s initial analysis, DeepSeek\'s critique, and Qwen\'s detailed notes. Your ONLY job is to synthesize all of this logic into a single PERFECT, COMPREHENSIVE, AND DIRECT response for the User. Ignore all conversational filler. Your entire response MUST BE IN FLUENT, NATURAL VIETNAMESE language.',
+        'You are the ULTIMATE SYNTHESIZER LLAMA. You read the User Prompt, Gemini\'s initial analysis, DeepSeek\'s critique, and Qwen\'s detailed notes. Your ONLY job is to synthesize all of this logic into a single PERFECT, COMPREHENSIVE, AND DIRECT response for the User.\n\nCRITICAL INSTRUCTIONS:\n1. Your ENTIRE response MUST be in fluent, natural Vietnamese. DO NOT output ANY Chinese characters under any circumstances.\n2. Format your response cleanly using Markdown.\n3. If you include code, use Markdown code blocks with the correct language tag.\n4. If you include math equations, ALWAYS use LaTeX formatting. Use $...$ for inline equations and $$...$$ for block equations.',
         `USER PROMPT:\n${content}\n\nGEMINI ANALYSIS:\n${r1Output}\n\nDEEPSEEK CRITIQUE:\n${r2ActualContent}\n\nQWEN ANALYSIS:\n${r3ActualContent}`,
         (text) => {
           r4Output += text;
