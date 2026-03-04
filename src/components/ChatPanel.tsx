@@ -1,6 +1,11 @@
 import { Send, User, Bot, Mic } from 'lucide-react';
 import React, { useState } from 'react';
 import { Message } from '../App';
+import ReactMarkdown from 'react-markdown';
+import remarkMath from 'remark-math';
+import remarkGfm from 'remark-gfm';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css'; // Ensure you import the CSS for equations
 
 export function ChatPanel({ messages, onSendMessage, isProcessing, messagesEndRef }: { messages: Message[], onSendMessage: (msg: string) => void, isProcessing: boolean, messagesEndRef: React.RefObject<HTMLDivElement | null> }) {
   const [input, setInput] = useState('');
@@ -20,11 +25,10 @@ export function ChatPanel({ messages, onSendMessage, isProcessing, messagesEndRe
               {msg.role === 'user' ? <User size={12} /> : <Bot size={12} />}
               {msg.role.toUpperCase()}
             </span>
-            <div className={`text-sm p-3 rounded-lg border max-w-[80%] whitespace-pre-wrap ${
-              msg.role === 'user' 
-                ? 'bg-blue-500/10 border-blue-500/20 text-blue-100' 
+            <div className={`text-sm p-3 rounded-lg border max-w-[80%] whitespace-pre-wrap ${msg.role === 'user'
+                ? 'bg-blue-500/10 border-blue-500/20 text-blue-100'
                 : 'bg-zinc-900/50 border-zinc-800/50 text-zinc-300 w-full'
-            }`}>
+              }`}>
               {msg.isVoice && (
                 <div className="flex items-center gap-1 text-emerald-400 mb-1 font-semibold text-xs">
                   <Mic size={12} /> [🎤 VOICE]
@@ -41,10 +45,14 @@ export function ChatPanel({ messages, onSendMessage, isProcessing, messagesEndRe
                 </div>
               )}
               {msg.role === 'system' ? (
-                <div 
-                  className="prose prose-invert max-w-none break-words" 
-                  dangerouslySetInnerHTML={{ __html: (window as any).marked ? (window as any).marked.parse(msg.content) : msg.content }} 
-                />
+                <div className="prose prose-invert prose-p:leading-relaxed prose-pre:p-0 max-w-none break-words">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkMath, remarkGfm]}
+                    rehypePlugins={[rehypeKatex]}
+                  >
+                    {msg.content}
+                  </ReactMarkdown>
+                </div>
               ) : (
                 msg.content
               )}
@@ -53,10 +61,10 @@ export function ChatPanel({ messages, onSendMessage, isProcessing, messagesEndRe
         ))}
         <div ref={messagesEndRef} />
       </div>
-      
+
       <div className="p-4 border-t border-zinc-800 bg-zinc-900/30">
         <div className="relative flex items-center">
-          <textarea 
+          <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
             disabled={isProcessing}
@@ -70,7 +78,7 @@ export function ChatPanel({ messages, onSendMessage, isProcessing, messagesEndRe
             className="w-full bg-zinc-900 border border-zinc-700 rounded-lg pl-4 pr-12 py-3 text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none h-12"
             rows={1}
           />
-          <button 
+          <button
             onClick={handleSend}
             disabled={isProcessing}
             className={`absolute right-2 p-2 transition-colors ${isProcessing ? 'text-zinc-600' : 'text-zinc-400 hover:text-blue-400'}`}

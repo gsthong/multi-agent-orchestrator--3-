@@ -189,41 +189,30 @@ export default function App() {
 
       const geminiInstruction = `You are GEMINI-PRIME, the lead analyst. Provide ONLY an INITIAL ANALYSIS of the user's prompt (and any attached image/PDF). Be academic, visionary, and highly structured mapping out core concepts. Do not attempt to complete the prompt fully; analyze the objective.`;
 
+      // Set empty placeholder for the final answer
+      setMessages(prev => {
+        const newMessages = [...prev];
+        newMessages[newMessages.length - 1].content = 'Đang phân tích và tổng hợp thông tin từ đa tác vụ... (Analyzing and synthesizing...)';
+        return newMessages;
+      });
+
       const geminiStream = await geminiClient.models.generateContentStream({
         model: 'gemini-2.5-flash',
         contents: parts,
         config: { systemInstruction: geminiInstruction }
       });
 
-      let r1Output = '🔵 ROUND 1 — INITIAL ANALYSIS (GEMINI-PRIME)\n\n';
-
-      setMessages(prev => {
-        const newMessages = [...prev];
-        newMessages[newMessages.length - 1].content = r1Output;
-        return newMessages;
-      });
+      let r1Output = '';
 
       for await (const chunk of geminiStream) {
         const text = chunk.text ?? '';
         r1Output += text;
-        setMessages(prev => {
-          const newMessages = [...prev];
-          newMessages[newMessages.length - 1].content = r1Output;
-          return newMessages;
-        });
       }
 
       // -----------------------------------------------------
       // ROUND 2: DEEPSEEK (Critique via Groq)
       // -----------------------------------------------------
       setDebateRound(2);
-      let r2Output = r1Output + '\n\n---\n\n🟠 ROUND 2 — CRITIQUE (DEEPSEEK)\n\n';
-
-      setMessages(prev => {
-        const newMessages = [...prev];
-        newMessages[newMessages.length - 1].content = r2Output;
-        return newMessages;
-      });
 
       let r2ActualContent = '';
       await streamGroqRequest(
@@ -233,12 +222,6 @@ export default function App() {
         `USER PROMPT:\n${content}\n\nGEMINI ANALYSIS:\n${r1Output}`,
         (text) => {
           r2ActualContent += text;
-          r2Output += text;
-          setMessages(prev => {
-            const newMessages = [...prev];
-            newMessages[newMessages.length - 1].content = r2Output;
-            return newMessages;
-          });
         }
       );
 
@@ -246,13 +229,6 @@ export default function App() {
       // ROUND 3: QWEN (Detail Analysis via Groq)
       // -----------------------------------------------------
       setDebateRound(3);
-      let r3Output = r2Output + '\n\n---\n\n🟣 ROUND 3 — SECONDARY CRITIQUE (QWEN)\n\n';
-
-      setMessages(prev => {
-        const newMessages = [...prev];
-        newMessages[newMessages.length - 1].content = r3Output;
-        return newMessages;
-      });
 
       let r3ActualContent = '';
       await streamGroqRequest(
@@ -262,12 +238,6 @@ export default function App() {
         `USER PROMPT:\n${content}\n\nGEMINI ANALYSIS:\n${r1Output}\n\nDEEPSEEK CRITIQUE:\n${r2ActualContent}`,
         (text) => {
           r3ActualContent += text;
-          r3Output += text;
-          setMessages(prev => {
-            const newMessages = [...prev];
-            newMessages[newMessages.length - 1].content = r3Output;
-            return newMessages;
-          });
         }
       );
 
@@ -275,18 +245,18 @@ export default function App() {
       // ROUND 4: LLAMA (Synthesis via Groq)
       // -----------------------------------------------------
       setDebateRound(4);
-      let r4Output = r3Output + '\n\n---\n\n🟢 ROUND 4 — SYNTHESIS & ✅ FINAL OUTPUT (LLAMA)\n\n';
+      let r4Output = '';
 
       setMessages(prev => {
         const newMessages = [...prev];
-        newMessages[newMessages.length - 1].content = r4Output;
+        newMessages[newMessages.length - 1].content = '';
         return newMessages;
       });
 
       await streamGroqRequest(
         'llama-3.3-70b-versatile',
         groqApiKey,
-        'You are LLAMA, a pragmatic, decisive, and human-centric synthesizer. Read the User Prompt, Gemini\'s initial analysis, DeepSeek\'s critique, and Qwen\'s detailed notes. Synthesize the debate and provide the final, complete answer or action directly addressing the User.',
+        'You are the ULTIMATE SYNTHESIZER LLAMA. You read the User Prompt, Gemini\'s initial analysis, DeepSeek\'s critique, and Qwen\'s detailed notes. Your ONLY job is to synthesize all of this logic into a single PERFECT, COMPREHENSIVE, AND DIRECT response for the User. Ignore all conversational filler. Your entire response MUST BE IN FLUENT, NATURAL VIETNAMESE language.',
         `USER PROMPT:\n${content}\n\nGEMINI ANALYSIS:\n${r1Output}\n\nDEEPSEEK CRITIQUE:\n${r2ActualContent}\n\nQWEN ANALYSIS:\n${r3ActualContent}`,
         (text) => {
           r4Output += text;
