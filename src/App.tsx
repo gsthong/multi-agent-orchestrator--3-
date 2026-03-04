@@ -227,7 +227,7 @@ export default function App() {
 
       let r2ActualContent = '';
       await streamGroqRequest(
-        'deepseek-r1-distill-llama-70b',
+        'llama-3.3-70b-versatile',
         groqApiKey,
         'You are DEEPSEEK, a skeptical, direct, zero-fluff critical thinker. Critique the initial analysis provided by the lead analyst against the User Prompt. Point out flaws, assumptions, or over-complications. Output ONLY your critique.',
         `USER PROMPT:\n${content}\n\nGEMINI ANALYSIS:\n${r1Output}`,
@@ -256,7 +256,7 @@ export default function App() {
 
       let r3ActualContent = '';
       await streamGroqRequest(
-        'qwen-2.5-32b',
+        'llama-3.3-70b-versatile',
         groqApiKey,
         'You are QWEN, an incredibly thorough detail-oriented analyzer. Review the user prompt, initial analysis, and deepseek critique. Provide a grounded, structured perspective focusing on practical execution and edge cases missed by both prior agents.',
         `USER PROMPT:\n${content}\n\nGEMINI ANALYSIS:\n${r1Output}\n\nDEEPSEEK CRITIQUE:\n${r2ActualContent}`,
