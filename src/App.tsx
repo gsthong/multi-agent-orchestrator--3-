@@ -62,13 +62,13 @@ async function streamGroqRequest(model: string, apiKey: string, systemPrompt: st
 }
 
 export default function App() {
-  const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_api_key') || '');
-  const [groqApiKey, setGroqApiKey] = useState(localStorage.getItem('groq_api_key') || '');
+  const [apiKey, setApiKey] = useState('');
+  const [groqApiKey, setGroqApiKey] = useState('');
 
-  const [showApiKeyModal, setShowApiKeyModal] = useState(!apiKey || !groqApiKey);
+  const [showApiKeyModal, setShowApiKeyModal] = useState(true);
 
-  const [apiKeyInput, setApiKeyInput] = useState(apiKey);
-  const [groqKeyInput, setGroqKeyInput] = useState(groqApiKey);
+  const [apiKeyInput, setApiKeyInput] = useState('');
+  const [groqKeyInput, setGroqKeyInput] = useState('');
 
   const [isProcessing, setIsProcessing] = useState(false);
   const [debateRound, setDebateRound] = useState(0);
@@ -348,7 +348,7 @@ export default function App() {
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
           <div className="bg-zinc-900 border border-zinc-700 p-6 rounded-xl w-[400px] shadow-2xl">
             <h2 className="text-lg font-bold text-zinc-100 mb-2">Welcome to Multi-Agent Pro</h2>
-            <p className="text-sm text-zinc-400 mb-4">Please enter your API Keys to continue. They are stored securely in your browser's local storage.</p>
+            <p className="text-sm text-zinc-400 mb-4">Please enter your API Keys to continue. They are stored temporarily for this session.</p>
 
             <div className="space-y-3 mb-6">
               <div>
@@ -383,17 +383,14 @@ export default function App() {
               </button>
               <button
                 onClick={() => {
-                  if (apiKeyInput.trim()) {
-                    localStorage.setItem('gemini_api_key', apiKeyInput.trim());
+                  if (apiKeyInput.trim() && groqKeyInput.trim()) {
                     setApiKey(apiKeyInput.trim());
-                  }
-                  if (groqKeyInput.trim()) {
-                    localStorage.setItem('groq_api_key', groqKeyInput.trim());
                     setGroqApiKey(groqKeyInput.trim());
+                    setShowApiKeyModal(false);
                   }
-                  setShowApiKeyModal(false);
                 }}
-                className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                disabled={!apiKeyInput.trim() || !groqKeyInput.trim()}
+                className="bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
               >
                 Save Keys
               </button>
