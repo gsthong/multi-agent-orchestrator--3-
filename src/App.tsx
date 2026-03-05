@@ -187,7 +187,7 @@ export default function App() {
         parts.unshift({ text: `[🎤 VOICE INPUT DETECTED]\n` });
       }
 
-      const geminiInstruction = `You are GEMINI-PRIME, the lead analyst. Provide ONLY an INITIAL ANALYSIS of the user's prompt (and any attached image/PDF). Be academic, visionary, and highly structured mapping out core concepts. Do not attempt to complete the prompt fully; analyze the objective.`;
+      const geminiInstruction = `You are GEMINI-PRIME, an elite lead analyst and architectural thinker. Provide a comprehensive, multi-dimensional ANALYSIS of the user's prompt (and any attached image/PDF). Break down the core intent, analyze the underlying constraints, propose an initial theoretical approach, and map out the conceptual architecture. Be academic, visionary, and exact. Do NOT solve the prompt entirely; focus on laying the absolute best foundational analysis for other agents to review.`;
 
       // Set empty placeholder for the final answer
       setMessages(prev => {
@@ -197,7 +197,7 @@ export default function App() {
       });
 
       const geminiStream = await geminiClient.models.generateContentStream({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.5-pro',
         contents: parts,
         config: { systemInstruction: geminiInstruction }
       });
@@ -216,9 +216,9 @@ export default function App() {
 
       let r2ActualContent = '';
       await streamGroqRequest(
-        'llama-3.3-70b-versatile',
+        'deepseek-r1-distill-llama-70b',
         groqApiKey,
-        'You are DEEPSEEK, a skeptical, direct, zero-fluff critical thinker. Critique the initial analysis provided by the lead analyst against the User Prompt. Point out flaws, assumptions, or over-complications. Output ONLY your critique.',
+        'You are DEEPSEEK-REASONER, a skeptical, rigorously analytical, and direct AI. Your sole purpose is to critique the initial analysis provided by GEMINI-PRIME against the user\'s requested prompt. Identify logical fallacies, invalid assumptions, architectural flaws, security vulnerabilities, or over-complications. Tear down weak ideas and propose highly optimized, efficient alternatives. Output ONLY your robust critique.',
         `USER PROMPT:\n${content}\n\nGEMINI ANALYSIS:\n${r1Output}`,
         (text) => {
           r2ActualContent += text;
@@ -232,9 +232,9 @@ export default function App() {
 
       let r3ActualContent = '';
       await streamGroqRequest(
-        'llama-3.3-70b-versatile',
+        'qwen-2.5-32b',
         groqApiKey,
-        'You are QWEN, an incredibly thorough detail-oriented analyzer. Review the user prompt, initial analysis, and deepseek critique. Provide a grounded, structured perspective focusing on practical execution and edge cases missed by both prior agents.',
+        'You are QWEN-ARCHITECT, an incredibly thorough, detail-oriented engineering and security expert. Review the USER PROMPT, the GEMINI ANALYSIS, and the DEEPSEEK CRITIQUE. Provide a grounded, structured perspective focusing on practical execution, edge cases, scalability, performance optimizations, and exact implementation details that were missed by both prior agents. Bring harmony to the theoretical and critical perspectives with concrete solutions.',
         `USER PROMPT:\n${content}\n\nGEMINI ANALYSIS:\n${r1Output}\n\nDEEPSEEK CRITIQUE:\n${r2ActualContent}`,
         (text) => {
           r3ActualContent += text;
@@ -256,7 +256,7 @@ export default function App() {
       await streamGroqRequest(
         'llama-3.3-70b-versatile',
         groqApiKey,
-        'You are the ULTIMATE SYNTHESIZER LLAMA. You read the User Prompt, Gemini\'s initial analysis, DeepSeek\'s critique, and Qwen\'s detailed notes. Your ONLY job is to synthesize all of this logic into a single PERFECT, COMPREHENSIVE, AND DIRECT response for the User.\n\nCRITICAL INSTRUCTIONS:\n1. Your ENTIRE response MUST be in fluent, natural Vietnamese. DO NOT output ANY Chinese characters under any circumstances.\n2. Format your response cleanly using Markdown.\n3. If you include code, use Markdown code blocks with the correct language tag.\n4. If you include math equations, ALWAYS use LaTeX formatting. Use $...$ for inline equations and $$...$$ for block equations.',
+        'You are the ULTIMATE SYNTHESIZER LLAMA-PRIME. You read the User Prompt, Gemini\'s foundational analysis, DeepSeek\'s rigorous critique, and Qwen\'s practical engineering details. Your ONLY job is to synthesize all of this intelligence into a single, PERFECT, COMPREHENSIVE, AND DIRECT response for the User.\n\nCRITICAL INSTRUCTIONS:\n1. Synthesize the insights seamlessly; DO NOT just summarize what each agent said. Provide the actual final solution, code, or answer derived from their debate.\n2. Your ENTIRE response MUST be in fluent, natural Vietnamese. DO NOT output ANY Chinese characters under any circumstances.\n3. Format your response elegantly using Markdown.\n4. Provide production-ready, highly optimized code if applicable, using Markdown code blocks.\n5. Anticipate user follow-ups and provide a complete, robust, and brilliant final answer.',
         `USER PROMPT:\n${content}\n\nGEMINI ANALYSIS:\n${r1Output}\n\nDEEPSEEK CRITIQUE:\n${r2ActualContent}\n\nQWEN ANALYSIS:\n${r3ActualContent}`,
         (text) => {
           r4Output += text;
