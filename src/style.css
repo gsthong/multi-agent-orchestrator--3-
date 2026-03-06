@@ -1,0 +1,97 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --background: #09090b;
+    --foreground: #fafafa;
+  }
+}
+
+/* Custom scrollbar to match the dark aesthetic */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #3f3f46;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: #52525b;
+}
+
+/* Base styles to handle markdown outputs gracefully */
+.prose {
+  color: #d4d4d8;
+  line-height: 1.6;
+}
+
+.prose p {
+  margin-bottom: 1em;
+}
+
+.prose pre {
+  background-color: #18181b;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  margin-bottom: 1em;
+  border: 1px solid #27272a;
+}
+
+.prose code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.875em;
+  padding: 0.2em 0.4em;
+  background-color: #27272a;
+  border-radius: 0.25rem;
+}
+
+.prose pre code {
+  padding: 0;
+  background-color: transparent;
+  color: #e4e4e7;
+}
+
+.prose ul, .prose ol {
+  margin-bottom: 1em;
+  padding-left: 1.5em;
+}
+
+.prose li {
+  margin-bottom: 0.5em;
+}
+
+.prose ul {
+  list-style-type: disc;
+}
+
+.prose ol {
+  list-style-type: decimal;
+}
+
+.prose a {
+  color: #60a5fa;
+  text-decoration: underline;
+}
+
+/* Syntax highlighting for code blocks */
+.prose .language-header {
+  display: block;
+  background-color: #27272a;
+  color: #a1a1aa;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  border-top-left-radius: 0.5rem;
+  border-top-right-radius: 0.5rem;
+  text-align: right;
+  text-transform: uppercase;
+  margin-bottom: -1rem;
+  position: relative;
+  z-index: 10;
+}
