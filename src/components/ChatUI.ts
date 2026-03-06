@@ -1,6 +1,6 @@
 import { marked } from 'marked';
 import { StorageUtils, Message } from '../utils/storage';
-import { GeminiAPI } from '../api/gemini';
+import { OrchestratorAPI } from '../api/orchestrator';
 
 export class ChatUI {
     private containerEl: HTMLElement | null;
@@ -84,30 +84,22 @@ export class ChatUI {
         const contentElement = document.getElementById(contentElementId);
 
         try {
-            const history = StorageUtils.getHistory();
-            const currentPersona = history.persona || 'assistant';
-
             // 4. Send request and handle stream output
-            currentModelResponse = await GeminiAPI.sendMessageStream(
+            currentModelResponse = await OrchestratorAPI.startDebate(
                 text,
-                currentPersona,
+                (state) => {
+                    this.updateTypingIndicatorState(typingId, state);
+                },
                 (textChunk) => {
-                    // Remove typing indicator on first token
+                    // Remove typing indicator on first token from the FINAL agent
                     const typingEl = document.getElementById(typingId);
                     if (typingEl) typingEl.remove();
 
                     // Render accumulated markdown chunk in real-time
                     if (contentElement) {
-                        // We re-parse the entire accumulated response to handle markdown blocks
-                        // If performance drops, this is an area you optimize, but marked is fast
                         contentElement.innerHTML = marked.parse(currentModelResponse + textChunk) as string;
                         this.scrollToBottom();
                     }
-                },
-                (errorMsg) => {
-                    const typingEl = document.getElementById(typingId);
-                    if (typingEl) typingEl.remove();
-                    this.showErrorBubble(errorMsg);
                 }
             );
 
@@ -249,13 +241,56 @@ export class ChatUI {
         const id = `typing-${Date.now()}`;
         const wrapper = document.createElement('div');
         wrapper.id = id;
-        wrapper.className = "flex items-center gap-2 text-xs font-medium text-emerald-400 my-2 px-2 animate-pulse";
+        wrapper.className = "flex flex-col gap-2 items-start my-4";
 
-        wrapper.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg> AI is typing...`;
+        wrapper.innerHTML = `
+            <span class="text-xs font-medium text-emerald-400 flex items-center gap-1 animate-pulse">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg> 
+              MULTI-AGENT DEBATE INITIALIZING...
+            </span>
+            <div id="${id}-states" class="bg-zinc-900/40 border border-zinc-800/50 text-zinc-400 p-4 rounded-lg w-3/4 text-sm font-mono flex flex-col gap-2 shadow-inner transition-all duration-300">
+               <!-- States injected dynamically -->
+            </div>
+        `;
 
         this.containerEl.appendChild(wrapper);
         this.scrollToBottom();
         return id;
+    }
+
+    private updateTypingIndicatorState(typingId: string, state: string) {
+        const stateContainer = document.getElementById(`${typingId}-states`);
+        if (!stateContainer) return;
+
+        let iconColor = 'bg-blue-500';
+        let msg = '';
+
+        switch (state) {
+            case 'gemini': iconColor = 'bg-blue-500'; msg = 'Gemini Initializing Foundational Architecture...'; break;
+            case 'deepseek': iconColor = 'bg-orange-500'; msg = 'DeepSeek running Logical Critiques...'; break;
+            case 'qwen': iconColor = 'bg-purple-500'; msg = 'Qwen analyzing Engineering constraints...'; break;
+            case 'mixtral': iconColor = 'bg-emerald-500'; msg = 'Mixtral proposing Creative Alternatives...'; break;
+            case 'gemma': iconColor = 'bg-yellow-500'; msg = 'Gemma restructuring into strict Markdown & LaTeX...'; break;
+            case 'llama': iconColor = 'bg-rose-500'; msg = 'Llama-Prime Synthesizing Final Output...'; break;
+        }
+
+        // Add the new state visually
+        const stateRow = document.createElement('div');
+        stateRow.className = "flex items-center gap-3 animate-fade-in text-[12px] opacity-80";
+        stateRow.innerHTML = `
+            <div class="h-1.5 w-1.5 ${iconColor} rounded-full animate-ping"></div>
+            <span>${msg}</span>
+        `;
+
+        // Remove ping animation from previous children
+        Array.from(stateContainer.children).forEach(child => {
+            const dot = child.querySelector('.animate-ping');
+            if (dot) dot.classList.remove('animate-ping');
+            child.classList.replace('opacity-80', 'opacity-40');
+        });
+
+        stateContainer.appendChild(stateRow);
+        this.scrollToBottom();
     }
 
     private updateUIState() {

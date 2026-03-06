@@ -11,6 +11,7 @@ export interface ChatHistory {
 
 const STORAGE_KEY = 'ai_chat_history';
 const API_KEY_STORAGE = 'gemini_api_key';
+const GROQ_KEY_STORAGE = 'groq_api_key';
 
 export class StorageUtils {
     // --- API Key Management ---
@@ -25,6 +26,18 @@ export class StorageUtils {
 
     static clearApiKey(): void {
         localStorage.removeItem(API_KEY_STORAGE);
+    }
+
+    static getGroqKey(): string | null {
+        return localStorage.getItem(GROQ_KEY_STORAGE);
+    }
+
+    static saveGroqKey(key: string): void {
+        localStorage.setItem(GROQ_KEY_STORAGE, key);
+    }
+
+    static clearGroqKey(): void {
+        localStorage.removeItem(GROQ_KEY_STORAGE);
     }
 
 
