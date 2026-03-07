@@ -213,13 +213,19 @@ export class ChatUI {
             // 4. Send request and handle stream output
             currentModelResponse = await OrchestratorAPI.startDebate(
                 text,
-                (state) => {
-                    this.updateTypingIndicatorState(typingId, state);
+                (state, output) => {
+                    this.updateTypingIndicatorState(typingId, state, output);
                 },
                 (textChunk) => {
-                    // Remove typing indicator on first token from the FINAL agent
-                    const typingEl = document.getElementById(typingId);
-                    if (typingEl) typingEl.remove();
+                    // Update accordion title on first token from the FINAL agent
+                    const typingSpinner = document.getElementById(`${typingId}-spinner`);
+                    if (typingSpinner) typingSpinner.remove();
+
+                    const typingTitle = document.getElementById(`${typingId}-title`);
+                    if (typingTitle) {
+                        typingTitle.textContent = "VIEW DEBATE MONOLOGUES (UNDER THE HOOD)";
+                        typingTitle.className = "text-zinc-500";
+                    }
 
                     // Render accumulated markdown chunk via Web Worker
                     if (contentElement) {
@@ -394,16 +400,18 @@ export class ChatUI {
         if (!this.containerEl) return '';
 
         const id = `typing-${Date.now()}`;
-        const wrapper = document.createElement('div');
+        const wrapper = document.createElement('details');
         wrapper.id = id;
-        wrapper.className = "flex flex-col gap-2 items-start my-4";
+        wrapper.className = "w-full my-4 bg-zinc-900/40 border border-zinc-800/50 rounded-lg overflow-hidden";
+        // Auto-open so users see the debate happening in real time
+        wrapper.open = true;
 
         wrapper.innerHTML = `
-            <span class="text-xs font-medium text-emerald-400 flex items-center gap-1 animate-pulse">
-              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg> 
-              MULTI-AGENT DEBATE INITIALIZING...
-            </span>
-            <div id="${id}-states" class="bg-zinc-900/40 border border-zinc-800/50 text-zinc-400 p-4 rounded-lg w-3/4 text-sm font-mono flex flex-col gap-2 shadow-inner transition-all duration-300">
+            <summary class="px-4 py-3 cursor-pointer text-xs font-medium text-emerald-400 flex items-center gap-2 outline-none hover:bg-zinc-800/50 transition">
+                <svg id="${id}-spinner" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-spin"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg> 
+                <span id="${id}-title" class="tracking-wide">MULTI-AGENT DEBATE INITIALIZING...</span>
+            </summary>
+            <div id="${id}-states" class="p-4 border-t border-zinc-800/50 text-sm font-mono flex flex-col gap-4 text-zinc-300">
                <!-- States injected dynamically -->
             </div>
         `;
@@ -413,9 +421,23 @@ export class ChatUI {
         return id;
     }
 
-    private updateTypingIndicatorState(typingId: string, state: string) {
+    private updateTypingIndicatorState(typingId: string, state: string, output?: string) {
         const stateContainer = document.getElementById(`${typingId}-states`);
         if (!stateContainer) return;
+
+        if (state.endsWith('_done')) {
+            const agent = state.replace('_done', '');
+            const contentBox = document.getElementById(`${typingId}-${agent}-content`);
+            const dot = document.getElementById(`${typingId}-${agent}-dot`);
+
+            if (dot) dot.classList.remove('animate-ping');
+            if (contentBox && output) {
+                // Populate the agent monologue
+                contentBox.textContent = output;
+                this.scrollToBottom();
+            }
+            return;
+        }
 
         let iconColor = 'bg-blue-500';
         let msg = '';
@@ -431,17 +453,18 @@ export class ChatUI {
 
         // Add the new state visually
         const stateRow = document.createElement('div');
-        stateRow.className = "flex items-center gap-3 animate-fade-in text-[12px] opacity-80";
+        stateRow.className = "flex flex-col gap-2 animate-fade-in";
         stateRow.innerHTML = `
-            <div class="h-1.5 w-1.5 ${iconColor} rounded-full animate-ping"></div>
-            <span>${msg}</span>
+            <div class="flex items-center gap-3 text-[12px] opacity-90">
+                <div id="${typingId}-${state}-dot" class="h-1.5 w-1.5 ${iconColor} rounded-full animate-ping"></div>
+                <span class="text-zinc-300 font-semibold">${msg}</span>
+            </div>
+            <div id="${typingId}-${state}-content" class="pl-5 border-l-2 border-zinc-800 ml-[3px] text-zinc-400 whitespace-pre-wrap text-xs"></div>
         `;
 
-        // Remove ping animation from previous children
+        // Fade previous rows slightly
         Array.from(stateContainer.children).forEach(child => {
-            const dot = child.querySelector('.animate-ping');
-            if (dot) dot.classList.remove('animate-ping');
-            child.classList.replace('opacity-80', 'opacity-40');
+            child.classList.add('opacity-70');
         });
 
         stateContainer.appendChild(stateRow);

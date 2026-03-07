@@ -36,6 +36,14 @@ export class StorageUtils {
         localStorage.setItem(GROQ_KEY_STORAGE, key);
     }
 
+    static getTheme(): 'dark' | 'light' {
+        return (localStorage.getItem('theme') as 'dark' | 'light') || 'dark';
+    }
+
+    static saveTheme(theme: 'dark' | 'light') {
+        localStorage.setItem('theme', theme);
+    }
+
     static clearGroqKey(): void {
         localStorage.removeItem(GROQ_KEY_STORAGE);
     }

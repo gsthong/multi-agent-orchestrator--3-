@@ -77,7 +77,7 @@ export class OrchestratorAPI {
      */
     static async startDebate(
         newMessage: string,
-        onStateUpdate: (state: string) => void,
+        onStateUpdate: (state: string, output?: string) => void,
         onFinalToken: (text: string) => void,
     ): Promise<string> {
 
@@ -116,6 +116,7 @@ export class OrchestratorAPI {
                 config: { systemInstruction: geminiInstruction }
             });
             const r1Output = geminiRes.text || '';
+            onStateUpdate('gemini_done', r1Output);
 
             // -----------------------------------------------------
             // ROUND 2: DEEPSEEK (Critique)
@@ -126,6 +127,7 @@ export class OrchestratorAPI {
                 'You are DEEPSEEK-REASONER, a rigorous, analytical, and highly logical AI. Your objective is to peer-review the initial analysis provided by GEMINI-PRIME against the user\'s prompt. Identify logical gaps, invalid assumptions, edge cases, and potential inefficiencies. Provide highly optimized, constructive alternatives. Output ONLY your review and proposed optimizations.',
                 `USER PROMPT:\n${fullPrompt}\n\nGEMINI ANALYSIS:\n${r1Output}`
             );
+            onStateUpdate('deepseek_done', r2Output);
 
             // -----------------------------------------------------
             // ROUND 3: QWEN (Practical Execution)
@@ -136,6 +138,7 @@ export class OrchestratorAPI {
                 'You are QWEN-ARCHITECT, an incredibly thorough, detail-oriented engineering expert. Review the USER PROMPT, GEMINI ANALYSIS, and DEEPSEEK CRITIQUE. Provide a grounded, structured perspective focusing on practical execution. Detail exactly how to implement the best ideas from both prior agents, focusing on modern best practices, clean code/patterns, scalability, and handling edge cases.',
                 `USER PROMPT:\n${fullPrompt}\n\nGEMINI ANALYSIS:\n${r1Output}\n\nDEEPSEEK CRITIQUE:\n${r2Output}`
             );
+            onStateUpdate('qwen_done', r3Output);
 
             // -----------------------------------------------------
             // ROUND 4: MIXTRAL (Creative / Security Alternative)
@@ -146,6 +149,7 @@ export class OrchestratorAPI {
                 'You are MIXTRAL-CREATOR, an outside-the-box thinker and security expert. You look at the problem from an entirely different angle. Review the entire debate so far. Point out any massive blind spots, security vulnerabilities, or drastically simpler/more creative ways to solve the problem that earlier agents missed.',
                 `USER PROMPT:\n${fullPrompt}\n\nGEMINI:\n${r1Output}\n\nDEEPSEEK:\n${r2Output}\n\nQWEN:\n${r3Output}`
             );
+            onStateUpdate('mixtral_done', r4Output);
 
             // -----------------------------------------------------
             // ROUND 5: GEMMA (Formatting & LaTeX Architect)
@@ -156,6 +160,7 @@ export class OrchestratorAPI {
                 'You are GEMMA-FORMATTER, a technical documentation specialist. You will review the chaotic debate and organize the absolute best technical concepts into a strict structural template. You MUST structure math logic using proper LaTeX formatting ($ inline and $$ block). Output pure structured logic without fluff.',
                 `USER PROMPT:\n${fullPrompt}\n\nDEBATE TRANSCRIPT:\nGemini: ${r1Output}\nDeepSeek: ${r2Output}\nQwen: ${r3Output}\nMixtral: ${r4Output}`
             );
+            onStateUpdate('gemma_done', r5Output);
 
             // -----------------------------------------------------
             // ROUND 6: LLAMA (Ultimate Synthesizer - Streamed to UI)

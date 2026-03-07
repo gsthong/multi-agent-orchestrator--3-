@@ -9,6 +9,7 @@ export class Sidebar {
     private clearBtn: HTMLButtonElement | null;
     private personaSelect: HTMLSelectElement | null;
     private titleEl: HTMLElement | null;
+    private themeToggleBtn: HTMLButtonElement | null;
 
     private chatUI: ChatUI;
 
@@ -20,6 +21,7 @@ export class Sidebar {
         this.clearBtn = document.getElementById('clear-history-btn') as HTMLButtonElement;
         this.personaSelect = document.getElementById('persona-selector') as HTMLSelectElement;
         this.titleEl = document.getElementById('mobile-header-title');
+        this.themeToggleBtn = document.getElementById('theme-toggle-btn') as HTMLButtonElement;
 
         this.chatUI = chatUI;
 
@@ -34,6 +36,10 @@ export class Sidebar {
             this.personaSelect.value = history.persona;
             this.updateTitle();
         }
+
+        // Load Theme
+        const theme = StorageUtils.getTheme();
+        this.applyTheme(theme);
     }
 
     private bindEvents() {
@@ -65,6 +71,42 @@ export class Sidebar {
 
                 this.updateTitle();
             });
+        }
+
+        // Theme Toggle
+        if (this.themeToggleBtn) {
+            this.themeToggleBtn.addEventListener('click', () => {
+                const currentTheme = StorageUtils.getTheme();
+                const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                this.applyTheme(newTheme);
+            });
+        }
+    }
+
+    private applyTheme(theme: 'dark' | 'light') {
+        const htmlEl = document.documentElement;
+        StorageUtils.saveTheme(theme);
+
+        if (theme === 'dark') {
+            htmlEl.classList.add('dark');
+        } else {
+            htmlEl.classList.remove('dark');
+        }
+
+        if (this.themeToggleBtn) {
+            const darkIcon = document.getElementById('theme-icon-dark');
+            const lightIcon = document.getElementById('theme-icon-light');
+            const textSpan = document.getElementById('theme-text');
+
+            if (theme === 'dark') {
+                darkIcon?.classList.replace('hidden', 'block');
+                lightIcon?.classList.replace('block', 'hidden');
+                if (textSpan) textSpan.textContent = 'Light Mode';
+            } else {
+                darkIcon?.classList.replace('block', 'hidden');
+                lightIcon?.classList.replace('hidden', 'block');
+                if (textSpan) textSpan.textContent = 'Dark Mode';
+            }
         }
     }
 
