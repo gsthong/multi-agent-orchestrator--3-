@@ -1,0 +1,17 @@
+"filename", "language", "TypeScript", "JSON with Comments", "HTML", "JSON", "Markdown", "PostCSS", "comment", "blank", "total"
+"d:\multi-agent-orchestrator (3)\README.md", "Markdown", 0, 0, 0, 0, 60, 0, 0, 16, 76
+"d:\multi-agent-orchestrator (3)\index.html", "HTML", 0, 0, 125, 0, 0, 0, 7, 16, 148
+"d:\multi-agent-orchestrator (3)\metadata.json", "JSON", 0, 0, 0, 5, 0, 0, 0, 1, 6
+"d:\multi-agent-orchestrator (3)\package-lock.json", "JSON", 0, 0, 0, 4695, 0, 0, 0, 1, 4696
+"d:\multi-agent-orchestrator (3)\package.json", "JSON", 0, 0, 0, 31, 0, 0, 0, 1, 32
+"d:\multi-agent-orchestrator (3)\src\api\orchestrator.ts", "TypeScript", 143, 0, 0, 0, 0, 0, 31, 27, 201
+"d:\multi-agent-orchestrator (3)\src\components\ApiModal.ts", "TypeScript", 73, 0, 0, 0, 0, 0, 6, 15, 94
+"d:\multi-agent-orchestrator (3)\src\components\ChatUI.ts", "TypeScript", 225, 0, 0, 0, 0, 0, 27, 59, 311
+"d:\multi-agent-orchestrator (3)\src\components\Sidebar.ts", "TypeScript", 76, 0, 0, 0, 0, 0, 5, 17, 98
+"d:\multi-agent-orchestrator (3)\src\index.css", "PostCSS", 0, 0, 0, 0, 0, 39, 0, 2, 41
+"d:\multi-agent-orchestrator (3)\src\main.ts", "TypeScript", 23, 0, 0, 0, 0, 0, 3, 6, 32
+"d:\multi-agent-orchestrator (3)\src\style.css", "PostCSS", 0, 0, 0, 0, 0, 78, 3, 17, 98
+"d:\multi-agent-orchestrator (3)\src\utils\storage.ts", "TypeScript", 51, 0, 0, 0, 0, 0, 4, 15, 70
+"d:\multi-agent-orchestrator (3)\tsconfig.json", "JSON with Comments", 0, 25, 0, 0, 0, 0, 0, 0, 25
+"d:\multi-agent-orchestrator (3)\vite.config.ts", "TypeScript", 20, 0, 0, 0, 0, 0, 2, 2, 24
+"Total", "-", 611, 25, 125, 4731, 60, 117, 88, 195, 5952

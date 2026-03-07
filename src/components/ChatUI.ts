@@ -6,12 +6,16 @@ export class ChatUI {
     private containerEl: HTMLElement | null;
     private inputEl: HTMLTextAreaElement | null;
     private sendBtn: HTMLButtonElement | null;
+    private micBtn: HTMLButtonElement | null;
     private isProcessing: boolean = false;
+    private recognition: any = null;
+    private isListening: boolean = false;
 
     constructor() {
         this.containerEl = document.getElementById('chat-container');
         this.inputEl = document.getElementById('chat-input') as HTMLTextAreaElement;
         this.sendBtn = document.getElementById('send-btn') as HTMLButtonElement;
+        this.micBtn = document.getElementById('mic-btn') as HTMLButtonElement;
 
         // Configure marked to use standard GitHub flavored markdown features
         marked.setOptions({
@@ -31,11 +35,93 @@ export class ChatUI {
         } else {
             this.showWelcomeMessage();
         }
+
+        this.initSpeechRecognition();
+    }
+
+    private initSpeechRecognition() {
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (SpeechRecognition) {
+            this.recognition = new SpeechRecognition();
+            this.recognition.continuous = false;
+            this.recognition.interimResults = true;
+            this.recognition.lang = navigator.language || 'en-US';
+
+            this.recognition.onstart = () => {
+                this.isListening = true;
+                if (this.micBtn) this.micBtn.classList.add('text-red-500', 'animate-pulse');
+            };
+
+            this.recognition.onresult = (event: any) => {
+                let finalTranscript = '';
+                for (let i = event.resultIndex; i < event.results.length; ++i) {
+                    if (event.results[i].isFinal) {
+                        finalTranscript += event.results[i][0].transcript;
+                    }
+                }
+
+                if (this.inputEl && finalTranscript) {
+                    this.inputEl.value += (this.inputEl.value && !this.inputEl.value.endsWith(' ') ? ' ' : '') + finalTranscript;
+                    this.inputEl.dispatchEvent(new Event('input'));
+                }
+            };
+
+            this.recognition.onerror = (event: any) => {
+                console.error("Speech recognition error", event.error);
+                this.stopListening();
+            };
+
+            this.recognition.onend = () => {
+                this.stopListening();
+            };
+        } else {
+            if (this.micBtn) this.micBtn.style.display = 'none';
+            console.warn("Speech Recognition not supported in this browser.");
+        }
+    }
+
+    private toggleListening() {
+        if (!this.recognition) return;
+        if (this.isListening) {
+            this.recognition.stop();
+        } else {
+            this.recognition.start();
+        }
+    }
+
+    private stopListening() {
+        this.isListening = false;
+        if (this.micBtn) this.micBtn.classList.remove('text-red-500', 'animate-pulse');
+    }
+
+    private speakText(text: string, buttonEl: HTMLElement) {
+        if (!('speechSynthesis' in window)) return;
+
+        window.speechSynthesis.cancel();
+
+        const plainText = text
+            .replace(/[#*_~`>]/g, '')
+            .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+            .replace(/!\[([^\]]*)\]\([^\)]+\)/g, '');
+
+        const utterance = new SpeechSynthesisUtterance(plainText);
+
+        const originalHtml = buttonEl.innerHTML;
+        buttonEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-pulse text-blue-400"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`;
+
+        utterance.onend = () => { buttonEl.innerHTML = originalHtml; };
+        utterance.onerror = () => { buttonEl.innerHTML = originalHtml; };
+
+        window.speechSynthesis.speak(utterance);
     }
 
     private bindEvents() {
         if (this.sendBtn) {
             this.sendBtn.addEventListener('click', () => this.handleSend());
+        }
+
+        if (this.micBtn) {
+            this.micBtn.addEventListener('click', () => this.toggleListening());
         }
 
         if (this.inputEl) {
@@ -107,6 +193,12 @@ export class ChatUI {
             if (contentElement && currentModelResponse) {
                 contentElement.innerHTML = marked.parse(currentModelResponse) as string;
                 this.saveMessageToHistory('model', currentModelResponse);
+
+                const speakerBtn = document.getElementById(`speaker-btn-${contentElementId}`);
+                if (speakerBtn) {
+                    speakerBtn.classList.remove('hidden');
+                    speakerBtn.addEventListener('click', () => this.speakText(currentModelResponse, speakerBtn));
+                }
             }
 
         } catch (e) {
@@ -165,17 +257,27 @@ export class ChatUI {
         wrapper.className = `flex flex-col gap-1 w-full ${role === 'user' ? 'items-end' : 'items-start'}`;
 
         // Header (User or Agent)
-        const header = document.createElement('span');
-        header.className = "text-xs font-medium text-zinc-500 flex items-center gap-1 mb-1";
+        const header = document.createElement('div');
+        header.className = "text-xs font-medium text-zinc-500 flex items-center justify-between w-full mb-1";
+        const titleSpan = document.createElement('span');
+        titleSpan.className = "flex items-center gap-1";
 
         // Avatar icons
-        let iconSvg = '';
         if (role === 'user') {
-            iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>`;
-            header.innerHTML = `${iconSvg} USER`;
+            const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>`;
+            titleSpan.innerHTML = `${iconSvg} USER`;
+            header.appendChild(titleSpan);
         } else {
-            iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>`;
-            header.innerHTML = `${iconSvg} AGENT`;
+            const iconSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg>`;
+            titleSpan.innerHTML = `${iconSvg} AGENT`;
+            header.appendChild(titleSpan);
+
+            const speakerBtn = document.createElement('button');
+            speakerBtn.className = "hover:text-blue-400 transition ml-4 focus:outline-none";
+            speakerBtn.title = "Read aloud";
+            speakerBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`;
+            speakerBtn.addEventListener('click', () => this.speakText(text, speakerBtn));
+            header.appendChild(speakerBtn);
         }
 
         // Bubble Styles
@@ -204,9 +306,20 @@ export class ChatUI {
         const wrapper = document.createElement('div');
         wrapper.className = "flex flex-col gap-1 w-full items-start animate-fade-in";
 
-        const header = document.createElement('span');
-        header.className = "text-xs font-medium text-zinc-500 flex items-center gap-1 mb-1";
-        header.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg> AGENT`;
+        const header = document.createElement('div');
+        header.className = "text-xs font-medium text-zinc-500 flex items-center justify-between w-full mb-1";
+
+        const titleSpan = document.createElement('span');
+        titleSpan.className = "flex items-center gap-1";
+        titleSpan.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"></path><rect width="16" height="12" x="4" y="8" rx="2"></rect><path d="M2 14h2"></path><path d="M20 14h2"></path><path d="M15 13v2"></path><path d="M9 13v2"></path></svg> AGENT`;
+        header.appendChild(titleSpan);
+
+        const speakerBtn = document.createElement('button');
+        speakerBtn.id = `speaker-btn-${id}`;
+        speakerBtn.className = "hover:text-blue-400 transition ml-4 focus:outline-none hidden";
+        speakerBtn.title = "Read aloud";
+        speakerBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`;
+        header.appendChild(speakerBtn);
 
         const bubbleWrapper = document.createElement('div');
         bubbleWrapper.id = id; // Give ID so we can target innerHTML during stream
