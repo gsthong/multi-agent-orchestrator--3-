@@ -1,6 +1,15 @@
-import { marked } from 'marked';
 import { StorageUtils, Message } from '../utils/storage';
 import { OrchestratorAPI } from '../api/orchestrator';
+import Prism from 'prismjs';
+import 'prismjs/components/prism-javascript';
+import 'prismjs/components/prism-typescript';
+import 'prismjs/components/prism-python';
+import 'prismjs/components/prism-bash';
+import 'prismjs/components/prism-json';
+import 'prismjs/components/prism-css';
+import 'prismjs/components/prism-markdown';
+import 'prismjs/components/prism-latex';
+import 'prismjs/themes/prism-tomorrow.css'; // Dark theme
 
 export class ChatUI {
     private containerEl: HTMLElement | null;
@@ -10,6 +19,7 @@ export class ChatUI {
     private isProcessing: boolean = false;
     private recognition: any = null;
     private isListening: boolean = false;
+    private markdownWorker: Worker;
 
     constructor() {
         this.containerEl = document.getElementById('chat-container');
@@ -17,14 +27,44 @@ export class ChatUI {
         this.sendBtn = document.getElementById('send-btn') as HTMLButtonElement;
         this.micBtn = document.getElementById('mic-btn') as HTMLButtonElement;
 
-        // Configure marked to use standard GitHub flavored markdown features
-        marked.setOptions({
-            breaks: true, // Convert \n to <br>
-            gfm: true, // Use GitHub Flavored Markdown
-        });
+        // Initialize Web Worker for Markdown Parsing
+        this.markdownWorker = new Worker(new URL('../workers/markdown.worker.ts', import.meta.url), { type: 'module' });
+        this.markdownWorker.onmessage = (e: MessageEvent) => {
+            const { id, html } = e.data;
+            const element = document.getElementById(id);
+            if (element) {
+                element.innerHTML = html;
+                this.scrollToBottom();
+                Prism.highlightAllUnder(element);
+            }
+        };
 
         this.init();
         this.bindEvents();
+        this.bindGlobalDelegation();
+    }
+
+    private bindGlobalDelegation() {
+        if (!this.containerEl) return;
+
+        this.containerEl.addEventListener('click', (e) => {
+            const target = e.target as HTMLElement;
+            const copyBtn = target.closest('.copy-code-btn') as HTMLButtonElement | null;
+            if (copyBtn) {
+                const codeToCopy = copyBtn.getAttribute('data-code');
+                if (codeToCopy) {
+                    navigator.clipboard.writeText(codeToCopy).then(() => {
+                        const originalHtml = copyBtn.innerHTML;
+                        copyBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-400"><polyline points="20 6 9 17 4 12"></polyline></svg> <span class="text-green-400">Copied!</span>`;
+                        setTimeout(() => {
+                            copyBtn.innerHTML = originalHtml;
+                        }, 2000);
+                    }).catch(err => {
+                        console.error("Failed to copy text: ", err);
+                    });
+                }
+            }
+        });
     }
 
     private init() {
@@ -181,17 +221,16 @@ export class ChatUI {
                     const typingEl = document.getElementById(typingId);
                     if (typingEl) typingEl.remove();
 
-                    // Render accumulated markdown chunk in real-time
+                    // Render accumulated markdown chunk via Web Worker
                     if (contentElement) {
-                        contentElement.innerHTML = marked.parse(currentModelResponse + textChunk) as string;
-                        this.scrollToBottom();
+                        this.markdownWorker.postMessage({ id: contentElementId, text: currentModelResponse + textChunk });
                     }
                 }
             );
 
             // 5. Stream complete, format finally and save history
             if (contentElement && currentModelResponse) {
-                contentElement.innerHTML = marked.parse(currentModelResponse) as string;
+                this.markdownWorker.postMessage({ id: contentElementId, text: currentModelResponse });
                 this.saveMessageToHistory('model', currentModelResponse);
 
                 const speakerBtn = document.getElementById(`speaker-btn-${contentElementId}`);
@@ -287,9 +326,12 @@ export class ChatUI {
             bubbleWrapper.className = "text-sm p-3 rounded-lg border max-w-[85%] whitespace-pre-wrap bg-blue-600/20 border-blue-500/30 text-blue-50";
             bubbleWrapper.textContent = text; // User input is raw text, no markdown translation needed.
         } else {
+            const bubbleId = `history-msg-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+            bubbleWrapper.id = bubbleId;
             bubbleWrapper.className = "text-sm p-4 rounded-lg border max-w-[90%] w-full bg-zinc-900/80 border-zinc-800/80 prose prose-invert break-words";
-            // Agent output uses marked library to render HTML from markdown
-            bubbleWrapper.innerHTML = marked.parse(text) as string;
+            // Request html from web worker
+            bubbleWrapper.innerHTML = '<span class="text-zinc-500 animate-pulse">Rendering...</span>';
+            this.markdownWorker.postMessage({ id: bubbleId, text });
         }
 
         wrapper.appendChild(header);
