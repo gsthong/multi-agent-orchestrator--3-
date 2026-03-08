@@ -1,4 +1,5 @@
 import { marked } from 'marked';
+import markedKatex from 'marked-katex-extension';
 
 const renderer = new marked.Renderer();
 
@@ -32,6 +33,12 @@ marked.setOptions({
     gfm: true, // Use GitHub Flavored Markdown
     renderer: renderer
 });
+
+// Add KaTeX support
+marked.use(markedKatex({
+    throwOnError: false,
+    displayMode: true
+}));
 
 self.onmessage = (e: MessageEvent) => {
     const { id, text } = e.data;

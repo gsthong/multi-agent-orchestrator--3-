@@ -68,15 +68,30 @@ export class ChatUI {
     }
 
     private init() {
-        // Load initial history
-        const history = StorageUtils.getHistory();
-        if (history.messages.length > 0) {
-            this.renderHistory(history.messages);
+        // Load initial history based on active session
+        const session = StorageUtils.getActiveHistory();
+        if (session.messages.length > 0) {
+            this.renderHistory(session.messages);
         } else {
             this.showWelcomeMessage();
         }
 
         this.initSpeechRecognition();
+    }
+
+    public async loadSession(sessionId: string) {
+        if (this.isProcessing) return; // Prevent switching while generating
+
+        StorageUtils.setCurrentSessionId(sessionId);
+        const session = StorageUtils.getSession(sessionId);
+        if (!session) return;
+
+        this.clearMessages(false); // Clear DOM only
+        if (session.messages.length > 0) {
+            this.renderHistory(session.messages);
+        } else {
+            this.showWelcomeMessage();
+        }
     }
 
     private initSpeechRecognition() {
@@ -197,6 +212,21 @@ export class ChatUI {
         // 2. Save user message to history
         this.saveMessageToHistory('user', text);
 
+        // 2.5 Generate title if this is the first message of a new session
+        const session = StorageUtils.getActiveHistory();
+        if (session.messages.length === 1 && session.title === 'New Chat') {
+            // Kick off background title generation, we don't wait for it
+            OrchestratorAPI.generateTitle(text).then(title => {
+                const refreshedSession = StorageUtils.getSession(session.id);
+                if (refreshedSession) {
+                    refreshedSession.title = title;
+                    StorageUtils.saveSession(refreshedSession);
+                    // Emit event so sidebar can refresh it's list
+                    window.dispatchEvent(new Event('session-title-updated'));
+                }
+            });
+        }
+
         this.isProcessing = true;
         this.updateUIState();
 
@@ -267,17 +297,20 @@ export class ChatUI {
 
     // --- UI Helpers below ---
 
-    public clearMessages() {
+    public clearMessages(createEmptySession: boolean = true) {
         if (this.containerEl) {
             this.containerEl.innerHTML = '';
+            if (createEmptySession) {
+                StorageUtils.createNewSession();
+            }
             this.showWelcomeMessage();
         }
     }
 
     private saveMessageToHistory(role: 'user' | 'model', text: string) {
-        const history = StorageUtils.getHistory();
-        history.messages.push({ role, parts: [{ text }] });
-        StorageUtils.saveHistory(history);
+        const session = StorageUtils.getActiveHistory();
+        session.messages.push({ role, parts: [{ text }] });
+        StorageUtils.saveSession(session);
     }
 
     private renderHistory(messages: Message[]) {

@@ -81,15 +81,25 @@
       </div>
     </div>
 
-    <div class="p-4 border-t border-zinc-800">
-      <button id="api-key-btn" class="text-sm text-zinc-400 hover:text-white flex items-center gap-2">
-        <svg xmlns="http://www.w3.org/-2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+    <div class="p-4 border-t border-zinc-800 flex flex-col gap-2">
+      <button id="api-key-btn" class="text-sm text-zinc-400 hover:text-white flex items-center gap-2 transition">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path
             d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4">
           </path>
         </svg>
-        API Settings
+        API Keys
+      </button>
+      <button id="settings-btn" class="text-sm text-zinc-400 hover:text-white flex items-center gap-2 transition">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path
+            d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z">
+          </path>
+          <circle cx="12" cy="12" r="3"></circle>
+        </svg>
+        Advanced Settings
       </button>
     </div>
   </aside>
@@ -163,6 +173,91 @@
         <button id="save-key-btn"
           class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
           Save Key
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Advanced Settings Modal -->
+  <div id="settings-modal"
+    class="hidden absolute inset-0 z-50 items-center justify-center bg-black/80 backdrop-blur-sm py-4">
+    <div
+      class="bg-zinc-900 border border-zinc-700 p-6 rounded-xl w-full max-w-lg mx-4 shadow-2xl max-h-full overflow-y-auto">
+      <div class="flex justify-between items-center mb-6 border-b border-zinc-800 pb-2">
+        <h2 class="text-lg font-bold text-zinc-100">Advanced Agent Settings</h2>
+        <span class="text-xs text-blue-400 bg-blue-400/10 px-2 py-0.5 rounded font-mono">Expert Mode</span>
+      </div>
+
+      <!-- General Settings -->
+      <div class="mb-6">
+        <div class="flex justify-between mb-1">
+          <label class="text-sm font-semibold text-zinc-300">Temperature (Creativity)</label>
+          <span id="temp-value" class="text-xs text-zinc-500 font-mono">0.7</span>
+        </div>
+        <input id="temp-slider" type="range" min="0" max="1" step="0.1" value="0.7"
+          class="w-full accent-blue-500 border-none outline-none appearance-none h-1 bg-zinc-700 rounded">
+        <p class="text-xs text-zinc-500 mt-2">Higher values make output more random, lower values make it more
+          deterministic.</p>
+      </div>
+
+      <!-- Agent Toggles & Models -->
+      <div class="space-y-4">
+        <div class="p-3 rounded-lg border border-orange-500/20 bg-orange-500/5">
+          <div class="flex justify-between items-center mb-2">
+            <label class="text-sm font-bold text-orange-400 flex items-center gap-2">
+              <input type="checkbox" id="toggle-deepseek" class="accent-orange-500 w-4 h-4 cursor-pointer" checked>
+              DeepSeek (Critique)
+            </label>
+          </div>
+          <input type="text" id="model-deepseek" value="deepseek-r1-distill-llama-70b"
+            class="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-300 font-mono">
+        </div>
+
+        <div class="p-3 rounded-lg border border-purple-500/20 bg-purple-500/5">
+          <div class="flex justify-between items-center mb-2">
+            <label class="text-sm font-bold text-purple-400 flex items-center gap-2">
+              <input type="checkbox" id="toggle-qwen" class="accent-purple-500 w-4 h-4 cursor-pointer" checked>
+              Qwen (Engineer)
+            </label>
+          </div>
+          <input type="text" id="model-qwen" value="qwen-2.5-32b"
+            class="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-300 font-mono">
+        </div>
+
+        <div class="p-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
+          <div class="flex justify-between items-center mb-2">
+            <label class="text-sm font-bold text-emerald-400 flex items-center gap-2">
+              <input type="checkbox" id="toggle-mixtral" class="accent-emerald-500 w-4 h-4 cursor-pointer" checked>
+              Mixtral (Alternative)
+            </label>
+          </div>
+          <input type="text" id="model-mixtral" value="mixtral-8x7b-32768"
+            class="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-300 font-mono">
+        </div>
+
+        <!-- Unskippable Agents -->
+        <div class="grid grid-cols-2 gap-3 mt-4">
+          <div>
+            <label class="text-xs font-bold text-yellow-500 block mb-1">Gemma (Formatter)</label>
+            <input type="text" id="model-gemma" value="gemma2-9b-it"
+              class="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-300 font-mono">
+          </div>
+          <div>
+            <label class="text-xs font-bold text-rose-500 block mb-1">Llama (Synthesizer)</label>
+            <input type="text" id="model-llama" value="llama-3.3-70b-versatile"
+              class="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-300 font-mono">
+          </div>
+        </div>
+      </div>
+
+      <div class="flex justify-end gap-2 mt-6">
+        <button id="close-settings-btn"
+          class="hover:bg-zinc-800 text-zinc-300 px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+          Cancel
+        </button>
+        <button id="save-settings-btn"
+          class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+          Save Settings
         </button>
       </div>
     </div>
