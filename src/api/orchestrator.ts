@@ -119,37 +119,38 @@ export class OrchestratorAPI {
             onStateUpdate('gemini_done', r1Output);
 
             // -----------------------------------------------------
-            // ROUND 2: DEEPSEEK (Critique)
+            // ROUND 2-4: PARALLEL EXECUTION (DeepSeek, Qwen, Mixtral)
             // -----------------------------------------------------
             onStateUpdate('deepseek');
-            const r2Output = await this.callGroq(
-                'deepseek-r1-distill-llama-70b',
-                'You are DEEPSEEK-REASONER, a rigorous, analytical, and highly logical AI. Your objective is to peer-review the initial analysis provided by GEMINI-PRIME against the user\'s prompt. Identify logical gaps, invalid assumptions, edge cases, and potential inefficiencies. Provide highly optimized, constructive alternatives. Output ONLY your review and proposed optimizations.',
-                `USER PROMPT:\n${fullPrompt}\n\nGEMINI ANALYSIS:\n${r1Output}`
-            );
-            onStateUpdate('deepseek_done', r2Output);
-
-            // -----------------------------------------------------
-            // ROUND 3: QWEN (Practical Execution)
-            // -----------------------------------------------------
             onStateUpdate('qwen');
-            const r3Output = await this.callGroq(
-                'qwen-2.5-32b',
-                'You are QWEN-ARCHITECT, an incredibly thorough, detail-oriented engineering expert. Review the USER PROMPT, GEMINI ANALYSIS, and DEEPSEEK CRITIQUE. Provide a grounded, structured perspective focusing on practical execution. Detail exactly how to implement the best ideas from both prior agents, focusing on modern best practices, clean code/patterns, scalability, and handling edge cases.',
-                `USER PROMPT:\n${fullPrompt}\n\nGEMINI ANALYSIS:\n${r1Output}\n\nDEEPSEEK CRITIQUE:\n${r2Output}`
-            );
-            onStateUpdate('qwen_done', r3Output);
-
-            // -----------------------------------------------------
-            // ROUND 4: MIXTRAL (Creative / Security Alternative)
-            // -----------------------------------------------------
             onStateUpdate('mixtral');
-            const r4Output = await this.callGroq(
-                'mixtral-8x7b-32768',
-                'You are MIXTRAL-CREATOR, an outside-the-box thinker and security expert. You look at the problem from an entirely different angle. Review the entire debate so far. Point out any massive blind spots, security vulnerabilities, or drastically simpler/more creative ways to solve the problem that earlier agents missed.',
-                `USER PROMPT:\n${fullPrompt}\n\nGEMINI:\n${r1Output}\n\nDEEPSEEK:\n${r2Output}\n\nQWEN:\n${r3Output}`
-            );
-            onStateUpdate('mixtral_done', r4Output);
+
+            const [r2Output, r3Output, r4Output] = await Promise.all([
+                this.callGroq(
+                    'deepseek-r1-distill-llama-70b',
+                    'You are DEEPSEEK-REASONER, a rigorous, analytical, and highly logical AI. Your objective is to peer-review the initial analysis provided by GEMINI-PRIME against the user\'s prompt. Identify logical gaps, invalid assumptions, edge cases, and potential inefficiencies. Provide highly optimized, constructive alternatives. Output ONLY your review and proposed optimizations.',
+                    `USER PROMPT:\n${fullPrompt}\n\nGEMINI ANALYSIS:\n${r1Output}`
+                ).then(res => {
+                    onStateUpdate('deepseek_done', res);
+                    return res;
+                }),
+                this.callGroq(
+                    'qwen-2.5-32b',
+                    'You are QWEN-ARCHITECT, an incredibly thorough, detail-oriented engineering expert. Review the USER PROMPT and GEMINI ANALYSIS. Provide a grounded, structured perspective focusing on practical execution. Detail exactly how to implement the best ideas, focusing on modern best practices, clean code/patterns, scalability, and handling edge cases.',
+                    `USER PROMPT:\n${fullPrompt}\n\nGEMINI ANALYSIS:\n${r1Output}`
+                ).then(res => {
+                    onStateUpdate('qwen_done', res);
+                    return res;
+                }),
+                this.callGroq(
+                    'mixtral-8x7b-32768',
+                    'You are MIXTRAL-CREATOR, an outside-the-box thinker and security expert. You look at the problem from an entirely different angle. Review the USER PROMPT and GEMINI ANALYSIS. Point out any massive blind spots, security vulnerabilities, or drastically simpler/more creative ways to solve the problem that earlier analysis missed.',
+                    `USER PROMPT:\n${fullPrompt}\n\nGEMINI ANALYSIS:\n${r1Output}`
+                ).then(res => {
+                    onStateUpdate('mixtral_done', res);
+                    return res;
+                })
+            ]);
 
             // -----------------------------------------------------
             // ROUND 5: GEMMA (Formatting & LaTeX Architect)
