@@ -20,6 +20,7 @@ export class ChatUI {
     private recognition: any = null;
     private isListening: boolean = false;
     private markdownWorker: Worker;
+    private pythonWorker: Worker;
 
     constructor() {
         this.containerEl = document.getElementById('chat-container');
@@ -39,6 +40,31 @@ export class ChatUI {
             }
         };
 
+        // Initialize Web Worker for Python Pyodide Execution
+        this.pythonWorker = new Worker(new URL('../workers/python.worker.ts', import.meta.url), { type: 'module' });
+        this.pythonWorker.onmessage = (e: MessageEvent) => {
+            const { id, type, output } = e.data;
+            const outputEl = document.getElementById(id);
+            if (!outputEl) return;
+
+            if (type === 'stdout') {
+                const div = document.createElement('div');
+                div.textContent = output;
+                outputEl.appendChild(div);
+            } else if (type === 'stderr' || type === 'error') {
+                const div = document.createElement('div');
+                div.className = 'text-red-400';
+                div.textContent = output;
+                outputEl.appendChild(div);
+            } else if (type === 'done') {
+                const div = document.createElement('div');
+                div.className = 'text-zinc-500 italic mt-1';
+                div.textContent = 'Execution completed.';
+                outputEl.appendChild(div);
+                this.scrollToBottom();
+            }
+        };
+
         this.init();
         this.bindEvents();
         this.bindGlobalDelegation();
@@ -49,19 +75,58 @@ export class ChatUI {
 
         this.containerEl.addEventListener('click', (e) => {
             const target = e.target as HTMLElement;
+
+            // Handle Copy Buttons
             const copyBtn = target.closest('.copy-code-btn') as HTMLButtonElement | null;
             if (copyBtn) {
                 const codeToCopy = copyBtn.getAttribute('data-code');
                 if (codeToCopy) {
-                    navigator.clipboard.writeText(codeToCopy).then(() => {
+                    // Unescape the HTML character entities before copying
+                    const unescapedCode = codeToCopy
+                        .replace(/&amp;/g, "&")
+                        .replace(/&lt;/g, "<")
+                        .replace(/&gt;/g, ">")
+                        .replace(/&quot;/g, "\"")
+                        .replace(/&#039;/g, "'");
+
+                    navigator.clipboard.writeText(unescapedCode).then(() => {
                         const originalHtml = copyBtn.innerHTML;
                         copyBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-400"><polyline points="20 6 9 17 4 12"></polyline></svg> <span class="text-green-400">Copied!</span>`;
-                        setTimeout(() => {
-                            copyBtn.innerHTML = originalHtml;
-                        }, 2000);
-                    }).catch(err => {
-                        console.error("Failed to copy text: ", err);
-                    });
+                        setTimeout(() => copyBtn.innerHTML = originalHtml, 2000);
+                    }).catch(err => console.error("Failed to copy text: ", err));
+                }
+            }
+
+            // Handle Run Code Buttons
+            const runBtn = target.closest('.run-code-btn') as HTMLButtonElement | null;
+            if (runBtn) {
+                const codeToRun = runBtn.getAttribute('data-code');
+                const lang = runBtn.getAttribute('data-lang');
+                if (codeToRun && lang) {
+                    // Unescape
+                    const code = codeToRun
+                        .replace(/&amp;/g, "&")
+                        .replace(/&lt;/g, "<")
+                        .replace(/&gt;/g, ">")
+                        .replace(/&quot;/g, "\"")
+                        .replace(/&#039;/g, "'");
+
+                    let outputContainer = runBtn.closest('.code-block-wrapper')?.querySelector('.terminal-output') as HTMLElement;
+                    if (!outputContainer) {
+                        outputContainer = document.createElement('div');
+                        outputContainer.className = 'terminal-output bg-black text-green-400 font-mono text-sm p-4 border-t border-zinc-800 max-h-64 overflow-y-auto w-full block whitespace-pre-wrap';
+                        runBtn.closest('.code-block-wrapper')?.appendChild(outputContainer);
+                    }
+
+                    outputContainer.innerHTML = `<div class="text-zinc-500 italic">Initializing ${lang} environment...</div>`;
+                    const execId = 'exec-' + Date.now();
+                    outputContainer.id = execId;
+
+                    if (lang === 'python') {
+                        this.runPythonCode(code, execId);
+                    } else if (lang === 'javascript' || lang === 'html') {
+                        this.runJavaScriptCode(code, outputContainer);
+                    }
                 }
             }
         });
@@ -513,9 +578,91 @@ export class ChatUI {
         }
     }
 
-    private scrollToBottom() {
+    public scrollToBottom() {
         if (this.containerEl) {
             this.containerEl.scrollTop = this.containerEl.scrollHeight;
         }
+    }
+
+    private runPythonCode(code: string, execId: string) {
+        this.pythonWorker.postMessage({ id: execId, pythonCode: code });
+    }
+
+    private runJavaScriptCode(code: string, outputEl: HTMLElement) {
+        outputEl.innerHTML = `<div class="text-zinc-500 italic">Executing JavaScript...</div>`;
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+
+        const id = 'iframe-' + Date.now();
+        iframe.id = id;
+
+        // Message listener for the iframe
+        const listener = (e: MessageEvent) => {
+            if (e.data.source === id) {
+                if (e.data.type === 'log') {
+                    const div = document.createElement('div');
+                    div.textContent = e.data.args.join(' ');
+                    outputEl.appendChild(div);
+                } else if (e.data.type === 'error') {
+                    const div = document.createElement('div');
+                    div.className = 'text-red-400';
+                    div.textContent = e.data.error;
+                    outputEl.appendChild(div);
+                } else if (e.data.type === 'done') {
+                    const div = document.createElement('div');
+                    div.className = 'text-zinc-500 italic mt-1';
+                    div.textContent = 'Execution completed.';
+                    outputEl.appendChild(div);
+                    this.scrollToBottom();
+
+                    window.removeEventListener('message', listener);
+                    // Slight delay to ensure final logs are captured before cleanup
+                    setTimeout(() => {
+                        if (document.body.contains(iframe)) {
+                            document.body.removeChild(iframe);
+                        }
+                    }, 500);
+                }
+            }
+        };
+
+        window.addEventListener('message', listener);
+        document.body.appendChild(iframe);
+
+        const html = `
+            <!DOCTYPE html>
+            <html>
+                <head>
+                    <script>
+                        const targetId = '${id}';
+                        const proxyConsole = (type) => (...args) => {
+                            window.parent.postMessage({ source: targetId, type: 'log', args: args.map(a => {
+                                if (typeof a === 'object') return JSON.stringify(a);
+                                return String(a);
+                            }) }, '*');
+                        };
+                        console.log = proxyConsole('log');
+                        console.info = proxyConsole('info');
+                        console.warn = proxyConsole('warn');
+                        console.error = proxyConsole('error');
+                        window.onerror = (msg, url, line, col, error) => {
+                            window.parent.postMessage({ source: targetId, type: 'error', error: msg }, '*');
+                        };
+                    </script>
+                </head>
+                <body>
+                    <script type="module">
+                        try {
+                            ${code}
+                        } catch (e) {
+                            console.error(e.toString());
+                        }
+                        window.parent.postMessage({ source: targetId, type: 'done' }, '*');
+                    </script>
+                </body>
+            </html>
+        `;
+
+        iframe.srcdoc = html;
     }
 }
