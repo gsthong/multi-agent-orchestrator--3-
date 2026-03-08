@@ -22,11 +22,20 @@ export class ChatUI {
     private markdownWorker: Worker;
     private pythonWorker: Worker;
 
+    // File Attachments State
+    private fileInputEl: HTMLInputElement | null;
+    private attachBtn: HTMLButtonElement | null;
+    private attachmentsContainer: HTMLElement | null;
+    private pendingFiles: { name: string, content: string }[] = [];
+
     constructor() {
         this.containerEl = document.getElementById('chat-container');
         this.inputEl = document.getElementById('chat-input') as HTMLTextAreaElement;
         this.sendBtn = document.getElementById('send-btn') as HTMLButtonElement;
         this.micBtn = document.getElementById('mic-btn') as HTMLButtonElement;
+        this.fileInputEl = document.getElementById('file-upload-input') as HTMLInputElement;
+        this.attachBtn = document.getElementById('attach-file-btn') as HTMLButtonElement;
+        this.attachmentsContainer = document.getElementById('file-attachments-container');
 
         // Initialize Web Worker for Markdown Parsing
         this.markdownWorker = new Worker(new URL('../workers/markdown.worker.ts', import.meta.url), { type: 'module' });
@@ -236,46 +245,123 @@ export class ChatUI {
     }
 
     private bindEvents() {
-        if (this.sendBtn) {
+        if (this.sendBtn && this.inputEl) {
             this.sendBtn.addEventListener('click', () => this.handleSend());
-        }
-
-        if (this.micBtn) {
-            this.micBtn.addEventListener('click', () => this.toggleListening());
-        }
-
-        if (this.inputEl) {
-            // Auto-resize textarea logic
-            this.inputEl.addEventListener('input', () => {
-                this.inputEl!.style.height = 'auto'; // Reset height
-                this.inputEl!.style.height = `${this.inputEl!.scrollHeight}px`; // Set to scroll height
-            });
-
-            // Handle Enter key (Shift+Enter for newline)
             this.inputEl.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
                     this.handleSend();
                 }
             });
+
+            // Auto-resize textarea
+            this.inputEl.addEventListener('input', () => {
+                this.inputEl!.style.height = 'auto';
+                this.inputEl!.style.height = (this.inputEl!.scrollHeight) + 'px';
+            });
         }
+
+        if (this.micBtn) {
+            this.micBtn.addEventListener('click', () => this.toggleListening());
+        }
+
+        if (this.attachBtn && this.fileInputEl) {
+            this.attachBtn.addEventListener('click', () => {
+                this.fileInputEl?.click();
+            });
+
+            this.fileInputEl.addEventListener('change', async (e) => {
+                const target = e.target as HTMLInputElement;
+                if (!target.files || target.files.length === 0) return;
+
+                for (let i = 0; i < target.files.length; i++) {
+                    const file = target.files[i];
+                    try {
+                        const content = await this.readFileAsText(file);
+                        this.pendingFiles.push({ name: file.name, content });
+                    } catch (err) {
+                        console.error(`Error reading file ${file.name}:`, err);
+                        alert(`Failed to read file ${file.name}. Ensure it is a text-based file.`);
+                    }
+                }
+
+                // Clear the input so selecting the same file again triggers change
+                target.value = '';
+                this.renderAttachments();
+            });
+        }
+    }
+
+    private readFileAsText(file: File): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target?.result as string);
+            reader.onerror = (e) => reject(e);
+            reader.readAsText(file);
+        });
+    }
+
+    private renderAttachments() {
+        if (!this.attachmentsContainer) return;
+        this.attachmentsContainer.innerHTML = '';
+
+        this.pendingFiles.forEach((f, idx) => {
+            const badge = document.createElement('div');
+            badge.className = 'flex items-center gap-1 bg-zinc-800 text-zinc-300 text-xs px-2 py-1 rounded border border-zinc-700';
+
+            const nameEl = document.createElement('span');
+            nameEl.className = 'truncate max-w-[120px]';
+            nameEl.textContent = f.name;
+
+            const removeBtn = document.createElement('button');
+            removeBtn.className = 'text-zinc-500 hover:text-red-400 focus:outline-none';
+            removeBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>`;
+            removeBtn.onclick = () => {
+                this.pendingFiles.splice(idx, 1);
+                this.renderAttachments();
+            };
+
+            badge.appendChild(nameEl);
+            badge.appendChild(removeBtn);
+            this.attachmentsContainer!.appendChild(badge);
+        });
     }
 
     private async handleSend() {
         if (!this.inputEl || this.isProcessing) return;
 
         const text = this.inputEl.value.trim();
-        if (!text) return;
+        if (!text && this.pendingFiles.length === 0) return;
+
+        // Compile file context
+        let fileContextStr = "";
+        let visualText = text;
+
+        if (this.pendingFiles.length > 0) {
+            fileContextStr = "### ATTACHED FILE CONTEXT ###\n";
+            this.pendingFiles.forEach(f => {
+                fileContextStr += `\n--- File: ${f.name} ---\n${f.content}\n`;
+            });
+            fileContextStr += "\n##############################\n\n";
+
+            // Show attachments visually in the chat bubble
+            const fileList = this.pendingFiles.map(f => `\`${f.name}\``).join(', ');
+            visualText = text ? `${text}\n\n*(Attached: ${fileList})*` : `*(Attached files: ${fileList})*`;
+
+            // Clear attachments from UI
+            this.pendingFiles = [];
+            this.renderAttachments();
+        }
 
         // Reset input
         this.inputEl.value = '';
         this.inputEl.style.height = 'auto';
 
         // 1. Add user message visually
-        this.appendMessage('user', text);
+        this.appendMessage('user', visualText);
 
         // 2. Save user message to history
-        this.saveMessageToHistory('user', text);
+        this.saveMessageToHistory('user', visualText);
 
         // 2.5 Generate title if this is the first message of a new session
         const session = StorageUtils.getActiveHistory();
@@ -295,63 +381,63 @@ export class ChatUI {
         this.isProcessing = true;
         this.updateUIState();
 
-        // 3. Show typing indicator and create a target element for streaming
-        const typingId = this.showTypingIndicator();
-        let currentModelResponse = '';
-        const contentElementId = `model-msg-${Date.now()}`;
-
         // Create the empty model bubble ready to accept stream
-        this.createEmptyModelBubble(contentElementId);
-        const contentElement = document.getElementById(contentElementId);
+        // const contentElementId = `model-msg-${Date.now()}`; // This will be the typingId now
+        // this.createEmptyModelBubble(contentElementId);
+        // const contentElement = document.getElementById(contentElementId);
 
+        let typingId = '';
         try {
-            // 4. Send request and handle stream output
-            currentModelResponse = await OrchestratorAPI.startDebate(
-                text,
-                (state, output) => {
-                    this.updateTypingIndicatorState(typingId, state, output);
-                },
-                (textChunk) => {
-                    // Update accordion title on first token from the FINAL agent
-                    const typingSpinner = document.getElementById(`${typingId}-spinner`);
-                    if (typingSpinner) typingSpinner.remove();
+            // Wait slightly for DOM to update
+            await new Promise(resolve => setTimeout(resolve, 50));
 
-                    const typingTitle = document.getElementById(`${typingId}-title`);
-                    if (typingTitle) {
-                        typingTitle.textContent = "VIEW DEBATE MONOLOGUES (UNDER THE HOOD)";
-                        typingTitle.className = "text-zinc-500";
-                    }
+            // Create typing indicator UI 
+            typingId = this.showTypingIndicator();
 
-                    // Render accumulated markdown chunk via Web Worker
-                    if (contentElement) {
-                        this.markdownWorker.postMessage({ id: contentElementId, text: currentModelResponse + textChunk });
-                    }
+            const onStateUpdate = (state: string, output?: string) => {
+                this.updateTypingIndicatorState(typingId, state, output);
+            };
+
+            let firstChunk = true;
+            let fullStreamText = '';
+
+            const onFinalToken = (chunk: string) => {
+                if (firstChunk) {
+                    // Remove typing indicator on first real token
+                    const el = document.getElementById(typingId);
+                    if (el) el.remove();
+                    this.createEmptyModelBubble(typingId); // Re-create as a normal bubble with the same ID
+                    firstChunk = false;
                 }
-            );
+                fullStreamText += chunk;
+
+                // Send chunk to Markdown Worker
+                this.markdownWorker.postMessage({ id: typingId, text: fullStreamText });
+            };
+
+            // Call the Orchestrator with fileContext included
+            const finalResponse = await OrchestratorAPI.startDebate(text, fileContextStr, onStateUpdate, onFinalToken);
 
             // 5. Stream complete, format finally and save history
-            if (contentElement && currentModelResponse) {
-                this.markdownWorker.postMessage({ id: contentElementId, text: currentModelResponse });
-                this.saveMessageToHistory('model', currentModelResponse);
+            this.markdownWorker.postMessage({ id: typingId, text: finalResponse });
+            this.saveMessageToHistory('model', finalResponse);
 
-                const speakerBtn = document.getElementById(`speaker-btn-${contentElementId}`);
-                if (speakerBtn) {
-                    speakerBtn.classList.remove('hidden');
-                    speakerBtn.addEventListener('click', () => this.speakText(currentModelResponse, speakerBtn));
-                }
+            const speakerBtn = document.getElementById(`speaker-btn-${typingId}`);
+            if (speakerBtn) {
+                speakerBtn.classList.remove('hidden');
+                speakerBtn.addEventListener('click', () => this.speakText(finalResponse, speakerBtn));
             }
 
         } catch (e) {
             // General error catch (e.g network down completely)
             console.error(e);
             // Ensure typing is hidden
-            const typingEl = document.getElementById(typingId);
-            if (typingEl) typingEl.remove();
-
-            // If no response was recorded, we show generic network error
-            if (!currentModelResponse) {
-                this.showErrorBubble("A network error occurred connecting to the AI.");
+            if (typingId) {
+                const typingEl = document.getElementById(typingId);
+                if (typingEl) typingEl.remove();
             }
+
+            this.showErrorBubble("A network error occurred connecting to the AI.");
         } finally {
             this.isProcessing = false;
             this.updateUIState();

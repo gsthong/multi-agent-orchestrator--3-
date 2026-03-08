@@ -104,6 +104,7 @@ export class OrchestratorAPI {
      */
     static async startDebate(
         newMessage: string,
+        fileContext: string | undefined,
         onStateUpdate: (state: string, output?: string) => void,
         onFinalToken: (text: string) => void,
     ): Promise<string> {
@@ -129,7 +130,12 @@ export class OrchestratorAPI {
             });
         }
 
-        const fullPrompt = `${historyContext}\n\nCURRENT USER PROMPT: ${newMessage}`;
+        let fullPrompt = `${historyContext}\n\nCURRENT USER PROMPT: ${newMessage}`;
+
+        // Inject attached file content if provided
+        if (fileContext) {
+            fullPrompt = `${fileContext}\n\n${fullPrompt}`;
+        }
 
         try {
             // -----------------------------------------------------
@@ -141,7 +147,10 @@ export class OrchestratorAPI {
             const geminiRes = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
                 contents: [{ role: 'user', parts: [{ text: fullPrompt }] }],
-                config: { systemInstruction: geminiInstruction }
+                config: {
+                    systemInstruction: geminiInstruction,
+                    tools: [{ googleSearch: {} }]
+                }
             });
             const r1Output = geminiRes.text || '';
             onStateUpdate('gemini_done', r1Output);
