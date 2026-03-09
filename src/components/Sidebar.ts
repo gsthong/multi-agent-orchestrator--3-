@@ -42,16 +42,16 @@ export class Sidebar {
         this.bindEvents();
     }
 
-    private init() {
+    private async init() {
         // Load Theme
         const theme = StorageUtils.getTheme();
         this.applyTheme(theme);
 
         // Initial render of history
-        this.renderHistoryList();
+        await this.renderHistoryList();
 
         // Sync title with active session
-        const activeSession = StorageUtils.getActiveHistory();
+        const activeSession = await StorageUtils.getActiveHistory();
         if (this.personaSelect && activeSession.persona) {
             this.personaSelect.value = activeSession.persona;
             this.updateTitle();
@@ -70,10 +70,10 @@ export class Sidebar {
 
         // New Chat 
         if (this.newChatBtn) {
-            this.newChatBtn.addEventListener('click', () => {
-                const newSession = StorageUtils.createNewSession(this.personaSelect?.value || 'assistant');
-                this.chatUI.loadSession(newSession.id);
-                this.renderHistoryList();
+            this.newChatBtn.addEventListener('click', async () => {
+                const newSession = await StorageUtils.createNewSession(this.personaSelect?.value || 'assistant');
+                await this.chatUI.loadSession(newSession.id);
+                await this.renderHistoryList();
             });
         }
 
@@ -83,17 +83,17 @@ export class Sidebar {
         }
 
         // Listen for async title updates from ChatUI
-        window.addEventListener('session-title-updated', () => {
-            this.renderHistoryList();
+        window.addEventListener('session-title-updated', async () => {
+            await this.renderHistoryList();
         });
 
         // Persona change
         if (this.personaSelect) {
-            this.personaSelect.addEventListener('change', () => {
+            this.personaSelect.addEventListener('change', async () => {
                 const newPersona = this.personaSelect!.value;
-                const session = StorageUtils.getActiveHistory();
+                const session = await StorageUtils.getActiveHistory();
                 session.persona = newPersona;
-                StorageUtils.saveSession(session);
+                await StorageUtils.saveSession(session);
 
                 this.updateTitle();
             });
@@ -109,11 +109,11 @@ export class Sidebar {
         }
     }
 
-    private renderHistoryList() {
+    private async renderHistoryList() {
         if (!this.historyListEl) return;
         this.historyListEl.innerHTML = '';
 
-        const sessions = StorageUtils.getSessions();
+        const sessions = await StorageUtils.getSessions();
         const currentActiveId = StorageUtils.getCurrentSessionId();
 
         if (sessions.length === 0) {
@@ -130,15 +130,15 @@ export class Sidebar {
             const titleSpan = document.createElement('span');
             titleSpan.className = 'text-sm truncate mr-2 w-full';
             titleSpan.textContent = session.title || 'New Chat';
-            titleSpan.addEventListener('click', () => {
+            titleSpan.addEventListener('click', async () => {
                 if (!isActive) {
-                    this.chatUI.loadSession(session.id);
+                    await this.chatUI.loadSession(session.id);
                     // Sync persona selector if it changed
                     if (this.personaSelect && session.persona) {
                         this.personaSelect.value = session.persona;
                         this.updateTitle();
                     }
-                    this.renderHistoryList();
+                    await this.renderHistoryList();
                 }
             });
 
@@ -152,20 +152,20 @@ export class Sidebar {
             item.addEventListener('mouseenter', () => delBtn.classList.remove('hidden'));
             item.addEventListener('mouseleave', () => { if (!isActive) delBtn.classList.add('hidden'); });
 
-            delBtn.addEventListener('click', (e) => {
+            delBtn.addEventListener('click', async (e) => {
                 e.stopPropagation();
                 if (confirm('Delete this chat session?')) {
-                    StorageUtils.deleteSession(session.id);
+                    await StorageUtils.deleteSession(session.id);
                     // If we deleted the active one, pick whatever is active now
                     const newActiveId = StorageUtils.getCurrentSessionId();
                     if (newActiveId) {
-                        this.chatUI.loadSession(newActiveId);
+                        await this.chatUI.loadSession(newActiveId);
                     } else {
                         // Create a new one
-                        const fresh = StorageUtils.createNewSession(this.personaSelect?.value);
-                        this.chatUI.loadSession(fresh.id);
+                        const fresh = await StorageUtils.createNewSession(this.personaSelect?.value);
+                        await this.chatUI.loadSession(fresh.id);
                     }
-                    this.renderHistoryList();
+                    await this.renderHistoryList();
                 }
             });
 
@@ -202,14 +202,16 @@ export class Sidebar {
         }
     }
 
-    private handleClearHistory() {
+    private async handleClearHistory() {
         if (confirm('Are you sure you want to delete ALL chat sessions? This cannot be undone.')) {
-            const sessions = StorageUtils.getSessions();
-            sessions.forEach(s => StorageUtils.deleteSession(s.id));
+            const sessions = await StorageUtils.getSessions();
+            for (const s of sessions) {
+                await StorageUtils.deleteSession(s.id);
+            }
 
-            const fresh = StorageUtils.createNewSession(this.personaSelect?.value);
-            this.chatUI.loadSession(fresh.id);
-            this.renderHistoryList();
+            const fresh = await StorageUtils.createNewSession(this.personaSelect?.value);
+            await this.chatUI.loadSession(fresh.id);
+            await this.renderHistoryList();
         }
     }
 

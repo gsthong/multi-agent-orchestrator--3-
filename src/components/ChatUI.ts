@@ -27,6 +27,7 @@ export class ChatUI {
     private attachBtn: HTMLButtonElement | null;
     private attachmentsContainer: HTMLElement | null;
     private pendingFiles: { name: string, content: string }[] = [];
+    private pendingPythonExecutions: Map<string, { resolve: (val: string) => void, reject: (err: any) => void, output: string }> = new Map();
 
     constructor() {
         this.containerEl = document.getElementById('chat-container');
@@ -49,10 +50,25 @@ export class ChatUI {
             }
         };
 
-        // Initialize Web Worker for Python Pyodide Execution
         this.pythonWorker = new Worker(new URL('../workers/python.worker.ts', import.meta.url), { type: 'module' });
         this.pythonWorker.onmessage = (e: MessageEvent) => {
             const { id, type, output } = e.data;
+
+            if (this.pendingPythonExecutions.has(id)) {
+                const exec = this.pendingPythonExecutions.get(id)!;
+                if (type === 'stdout' || type === 'stderr') {
+                    exec.output += output + '\n';
+                } else if (type === 'error') {
+                    exec.output += 'ERROR: ' + output + '\n';
+                    exec.resolve(exec.output);
+                    this.pendingPythonExecutions.delete(id);
+                } else if (type === 'done') {
+                    exec.resolve(exec.output || 'Execution completed with no output.');
+                    this.pendingPythonExecutions.delete(id);
+                }
+                return;
+            }
+
             const outputEl = document.getElementById(id);
             if (!outputEl) return;
 
@@ -141,9 +157,9 @@ export class ChatUI {
         });
     }
 
-    private init() {
+    private async init() {
         // Load initial history based on active session
-        const session = StorageUtils.getActiveHistory();
+        const session = await StorageUtils.getActiveHistory();
         if (session.messages.length > 0) {
             this.renderHistory(session.messages);
         } else {
@@ -157,10 +173,10 @@ export class ChatUI {
         if (this.isProcessing) return; // Prevent switching while generating
 
         StorageUtils.setCurrentSessionId(sessionId);
-        const session = StorageUtils.getSession(sessionId);
+        const session = await StorageUtils.getSession(sessionId);
         if (!session) return;
 
-        this.clearMessages(false); // Clear DOM only
+        await this.clearMessages(false); // Clear DOM only
         if (session.messages.length > 0) {
             this.renderHistory(session.messages);
         } else {
@@ -361,17 +377,17 @@ export class ChatUI {
         this.appendMessage('user', visualText);
 
         // 2. Save user message to history
-        this.saveMessageToHistory('user', visualText);
+        await this.saveMessageToHistory('user', visualText);
 
         // 2.5 Generate title if this is the first message of a new session
-        const session = StorageUtils.getActiveHistory();
+        const session = await StorageUtils.getActiveHistory();
         if (session.messages.length === 1 && session.title === 'New Chat') {
             // Kick off background title generation, we don't wait for it
-            OrchestratorAPI.generateTitle(text).then(title => {
-                const refreshedSession = StorageUtils.getSession(session.id);
+            OrchestratorAPI.generateTitle(text).then(async title => {
+                const refreshedSession = await StorageUtils.getSession(session.id);
                 if (refreshedSession) {
                     refreshedSession.title = title;
-                    StorageUtils.saveSession(refreshedSession);
+                    await StorageUtils.saveSession(refreshedSession);
                     // Emit event so sidebar can refresh it's list
                     window.dispatchEvent(new Event('session-title-updated'));
                 }
@@ -416,11 +432,17 @@ export class ChatUI {
             };
 
             // Call the Orchestrator with fileContext included
-            const finalResponse = await OrchestratorAPI.startDebate(text, fileContextStr, onStateUpdate, onFinalToken);
+            const finalResponse = await OrchestratorAPI.startDebate(
+                text,
+                fileContextStr,
+                onStateUpdate,
+                onFinalToken,
+                this.executePythonHidden.bind(this)
+            );
 
             // 5. Stream complete, format finally and save history
             this.markdownWorker.postMessage({ id: typingId, text: finalResponse });
-            this.saveMessageToHistory('model', finalResponse);
+            await this.saveMessageToHistory('model', finalResponse);
 
             const speakerBtn = document.getElementById(`speaker-btn-${typingId}`);
             if (speakerBtn) {
@@ -448,20 +470,20 @@ export class ChatUI {
 
     // --- UI Helpers below ---
 
-    public clearMessages(createEmptySession: boolean = true) {
+    public async clearMessages(createEmptySession: boolean = true) {
         if (this.containerEl) {
             this.containerEl.innerHTML = '';
             if (createEmptySession) {
-                StorageUtils.createNewSession();
+                await StorageUtils.createNewSession();
             }
             this.showWelcomeMessage();
         }
     }
 
-    private saveMessageToHistory(role: 'user' | 'model', text: string) {
-        const session = StorageUtils.getActiveHistory();
+    private async saveMessageToHistory(role: 'user' | 'model', text: string) {
+        const session = await StorageUtils.getActiveHistory();
         session.messages.push({ role, parts: [{ text }] });
-        StorageUtils.saveSession(session);
+        await StorageUtils.saveSession(session);
     }
 
     private renderHistory(messages: Message[]) {
@@ -623,6 +645,16 @@ export class ChatUI {
             return;
         }
 
+        if (state.endsWith('_chunk')) {
+            const agent = state.replace('_chunk', '');
+            const contentBox = document.getElementById(`${typingId}-${agent}-content`);
+            if (contentBox && output) {
+                contentBox.textContent += output;
+                this.scrollToBottom();
+            }
+            return;
+        }
+
         let iconColor = 'bg-blue-500';
         let msg = '';
 
@@ -668,6 +700,14 @@ export class ChatUI {
         if (this.containerEl) {
             this.containerEl.scrollTop = this.containerEl.scrollHeight;
         }
+    }
+
+    private executePythonHidden(code: string): Promise<string> {
+        return new Promise((resolve, reject) => {
+            const execId = 'exec-hidden-' + Date.now() + Math.random();
+            this.pendingPythonExecutions.set(execId, { resolve, reject, output: '' });
+            this.runPythonCode(code, execId);
+        });
     }
 
     private runPythonCode(code: string, execId: string) {

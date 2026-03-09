@@ -98,51 +98,57 @@ export class StorageUtils {
 
     // --- Multi-Session Chat History Management ---
 
-    static getSessions(): ChatSession[] {
-        this.migrateLegacyHistory(); // Ensure old users don't lose data
-        const data = localStorage.getItem(STORAGE_KEY);
-        if (!data) return [];
+    static async getSessions(): Promise<ChatSession[]> {
         try {
-            return JSON.parse(data) as ChatSession[];
+            const res = await fetch('/api/sessions');
+            if (res.ok) return await res.json();
+            return [];
         } catch (e) {
-            console.error('Failed to parse chat sessions', e);
             return [];
         }
     }
 
-    static getSession(id: string): ChatSession | undefined {
-        return this.getSessions().find(s => s.id === id);
-    }
-
-    static saveSession(session: ChatSession): void {
-        const sessions = this.getSessions();
-        const index = sessions.findIndex(s => s.id === session.id);
-        if (index >= 0) {
-            sessions[index] = session;
-        } else {
-            sessions.push(session);
+    static async getSession(id: string): Promise<ChatSession | undefined> {
+        try {
+            const res = await fetch(`/api/sessions/${id}`);
+            if (res.ok) return await res.json();
+            return undefined;
+        } catch (e) {
+            return undefined;
         }
-        // Save back sorted by newest first
-        sessions.sort((a, b) => b.createdAt - a.createdAt);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
     }
 
-    static deleteSession(id: string): void {
-        let sessions = this.getSessions();
-        sessions = sessions.filter(s => s.id !== id);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
+    static async saveSession(session: ChatSession): Promise<void> {
+        try {
+            await fetch(`/api/sessions/${session.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ title: session.title, messages: session.messages })
+            });
+        } catch (e) {
+            console.error('Failed to save session', e);
+        }
+    }
 
-        if (this.getCurrentSessionId() === id) {
-            const nextBest = sessions[0]?.id || null;
-            if (nextBest) {
-                this.setCurrentSessionId(nextBest);
-            } else {
-                localStorage.removeItem(CURRENT_SESSION_KEY);
+    static async deleteSession(id: string): Promise<void> {
+        try {
+            await fetch(`/api/sessions/${id}`, { method: 'DELETE' });
+
+            if (this.getCurrentSessionId() === id) {
+                const sessions = await this.getSessions();
+                const nextBest = sessions[0]?.id || null;
+                if (nextBest) {
+                    this.setCurrentSessionId(nextBest);
+                } else {
+                    localStorage.removeItem(CURRENT_SESSION_KEY);
+                }
             }
+        } catch (e) {
+            console.error('Failed to delete session', e);
         }
     }
 
-    static createNewSession(persona: string = 'assistant'): ChatSession {
+    static async createNewSession(persona: string = 'assistant'): Promise<ChatSession> {
         const newSession: ChatSession = {
             id: Date.now().toString(),
             title: 'New Chat',
@@ -150,7 +156,16 @@ export class StorageUtils {
             messages: [],
             createdAt: Date.now()
         };
-        this.saveSession(newSession);
+        try {
+            await fetch('/api/sessions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newSession)
+            });
+        } catch (e) {
+            console.error('Failed to create session in backend', e);
+        }
+
         this.setCurrentSessionId(newSession.id);
         return newSession;
     }
@@ -163,54 +178,24 @@ export class StorageUtils {
         localStorage.setItem(CURRENT_SESSION_KEY, id);
     }
 
-    static getActiveHistory(): ChatSession {
+    static async getActiveHistory(): Promise<ChatSession> {
         const currentId = this.getCurrentSessionId();
-        let session = currentId ? this.getSession(currentId) : null;
+        let session = currentId ? await this.getSession(currentId) : null;
 
         if (!session) {
             // Pick most recent or create new
-            const sessions = this.getSessions();
+            const sessions = await this.getSessions();
             if (sessions.length > 0) {
-                session = sessions[0];
-                this.setCurrentSessionId(session.id);
-            } else {
-                session = this.createNewSession();
-            }
-        }
-        return session;
-    }
-
-    private static migrateLegacyHistory(): void {
-        const legacyData = localStorage.getItem(LEGACY_STORAGE_KEY);
-        if (legacyData) {
-            try {
-                // Parse old ChatHistory format
-                const oldHistory = JSON.parse(legacyData);
-                // Create a new session out of it if it has messages
-                if (oldHistory.messages && oldHistory.messages.length > 0) {
-                    const migratedSession: ChatSession = {
-                        id: Date.now().toString(),
-                        title: 'Imported Chat',
-                        persona: oldHistory.persona || 'assistant',
-                        messages: oldHistory.messages,
-                        createdAt: Date.now() - 1000 // Ensure it's slightly older
-                    };
-
-                    const sessions = localStorage.getItem(STORAGE_KEY);
-                    let newSessions: ChatSession[] = sessions ? JSON.parse(sessions) : [];
-                    newSessions.push(migratedSession);
-
-                    localStorage.setItem(STORAGE_KEY, JSON.stringify(newSessions));
-                    if (!this.getCurrentSessionId()) {
-                        this.setCurrentSessionId(migratedSession.id);
-                    }
+                session = await this.getSession(sessions[0].id);
+                if (session) {
+                    this.setCurrentSessionId(session.id);
+                } else {
+                    session = await this.createNewSession();
                 }
-            } catch (e) {
-                console.error('Failed to migrate legacy history', e);
-            } finally {
-                // Clear the old key so we don't migrate again
-                localStorage.removeItem(LEGACY_STORAGE_KEY);
+            } else {
+                session = await this.createNewSession();
             }
         }
+        return session as ChatSession;
     }
 }

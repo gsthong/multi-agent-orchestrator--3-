@@ -107,6 +107,7 @@ export class OrchestratorAPI {
         fileContext: string | undefined,
         onStateUpdate: (state: string, output?: string) => void,
         onFinalToken: (text: string) => void,
+        executePython?: (code: string) => Promise<string>,
     ): Promise<string> {
 
         // Check both keys
@@ -121,7 +122,7 @@ export class OrchestratorAPI {
         const ai = new GoogleGenAI({ apiKey: geminiKey });
 
         // Get conversation history to provide context
-        const session = StorageUtils.getActiveHistory();
+        const session = await StorageUtils.getActiveHistory();
         let historyContext = "";
         if (session.messages.length > 0) {
             historyContext = "CONVERSATION HISTORY:\n";
@@ -144,16 +145,71 @@ export class OrchestratorAPI {
             onStateUpdate('gemini');
             const geminiInstruction = `You are GEMINI-PRIME, an elite lead analyst and architectural thinker. Provide a comprehensive, multi-dimensional ANALYSIS of the user's prompt. Break down the core intent, analyze constraints, and propose a clear, structured theoretical approach. Do NOT just give the final answer; your goal is to establish the absolute best foundational context and step-by-step logic for other agents to build upon. Be precise, logical, and highly structured.`;
 
-            const geminiRes = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: [{ role: 'user', parts: [{ text: fullPrompt }] }],
-                config: {
-                    systemInstruction: geminiInstruction,
-                    tools: [{ googleSearch: {} }]
+            let r1Output = '';
+            let contents: any[] = [{ role: 'user', parts: [{ text: fullPrompt }] }];
+
+            while (true) {
+                const stream = await ai.models.generateContentStream({
+                    model: 'gemini-2.5-flash',
+                    contents: contents,
+                    config: {
+                        systemInstruction: geminiInstruction,
+                        tools: [{ googleSearch: {} }, {
+                            functionDeclarations: [{
+                                name: 'run_python',
+                                description: 'Executes Python code in a secure Pyodide environment. Use this to perform calculations, data analysis, or execute algorithms. Print all outputs.',
+                                parameters: {
+                                    type: 'OBJECT' as any,
+                                    properties: {
+                                        code: {
+                                            type: 'STRING' as any,
+                                            description: 'The Python code to execute'
+                                        }
+                                    },
+                                    required: ['code']
+                                }
+                            }]
+                        }]
+                    }
+                });
+
+                let currentCalls: any[] = [];
+                for await (const chunk of stream) {
+                    if (chunk.text) {
+                        r1Output += chunk.text;
+                        onStateUpdate('gemini_chunk', chunk.text);
+                    }
+                    if (chunk.functionCalls && chunk.functionCalls.length > 0) {
+                        currentCalls.push(...chunk.functionCalls);
+                    }
                 }
-            });
-            const r1Output = geminiRes.text || '';
-            onStateUpdate('gemini_done', r1Output);
+
+                if (currentCalls.length > 0) {
+                    contents.push({ role: 'model', parts: currentCalls.map(call => ({ functionCall: call })) });
+
+                    const toolResponses: any[] = [];
+                    for (const call of currentCalls) {
+                        if (call.name === 'run_python' && executePython) {
+                            const code = call.args?.code as string || '';
+                            onStateUpdate('gemini_chunk', `\n\n> Executing Python Code...\n\`\`\`python\n${code}\n\`\`\`\n`);
+                            try {
+                                const result = await executePython(code);
+                                toolResponses.push({ functionResponse: { name: call.name, response: { result } } });
+                                onStateUpdate('gemini_chunk', `> Result:\n\`\`\`\n${result}\n\`\`\`\n\n`);
+                            } catch (e: any) {
+                                toolResponses.push({ functionResponse: { name: call.name, response: { error: e.toString() } } });
+                                onStateUpdate('gemini_chunk', `> Error:\n\`\`\`\n${e.toString()}\n\`\`\`\n\n`);
+                            }
+                        } else {
+                            toolResponses.push({ functionResponse: { name: call.name, response: { error: "Tool not found or disabled" } } });
+                        }
+                    }
+                    contents.push({ role: 'user', parts: toolResponses });
+                } else {
+                    break;
+                }
+            }
+            onStateUpdate('gemini_done', '');
 
             // -----------------------------------------------------
             // ROUND 2-4: PARALLEL EXECUTION (DeepSeek, Qwen, Mixtral)
@@ -166,9 +222,10 @@ export class OrchestratorAPI {
                     this.callGroq(
                         settings.models.deepSeek,
                         'You are DEEPSEEK-REASONER, a rigorous, analytical, and highly logical AI. Your objective is to peer-review the initial analysis provided by GEMINI-PRIME against the user\'s prompt. Identify logical gaps, invalid assumptions, edge cases, and potential inefficiencies. Provide highly optimized, constructive alternatives. Output ONLY your review and proposed optimizations.',
-                        `USER PROMPT:\n${fullPrompt}\n\nGEMINI ANALYSIS:\n${r1Output}`
+                        `USER PROMPT:\n${fullPrompt}\n\nGEMINI ANALYSIS:\n${r1Output}`,
+                        (chunk) => onStateUpdate('deepseek_chunk', chunk)
                     ).then(res => {
-                        onStateUpdate('deepseek_done', res);
+                        onStateUpdate('deepseek_done');
                         return `DEEPSEEK CRITIQUE:\n${res}`;
                     })
                 );
@@ -182,9 +239,10 @@ export class OrchestratorAPI {
                     this.callGroq(
                         settings.models.qwen,
                         'You are QWEN-ARCHITECT, an incredibly thorough, detail-oriented engineering expert. Review the USER PROMPT and GEMINI ANALYSIS. Provide a grounded, structured perspective focusing on practical execution. Detail exactly how to implement the best ideas, focusing on modern best practices, clean code/patterns, scalability, and handling edge cases.',
-                        `USER PROMPT:\n${fullPrompt}\n\nGEMINI ANALYSIS:\n${r1Output}`
+                        `USER PROMPT:\n${fullPrompt}\n\nGEMINI ANALYSIS:\n${r1Output}`,
+                        (chunk) => onStateUpdate('qwen_chunk', chunk)
                     ).then(res => {
-                        onStateUpdate('qwen_done', res);
+                        onStateUpdate('qwen_done');
                         return `QWEN IMPLEMENTATION:\n${res}`;
                     })
                 );
@@ -198,9 +256,10 @@ export class OrchestratorAPI {
                     this.callGroq(
                         settings.models.mixtral,
                         'You are MIXTRAL-CREATOR, an outside-the-box thinker and security expert. You look at the problem from an entirely different angle. Review the USER PROMPT and GEMINI ANALYSIS. Point out any massive blind spots, security vulnerabilities, or drastically simpler/more creative ways to solve the problem that earlier analysis missed.',
-                        `USER PROMPT:\n${fullPrompt}\n\nGEMINI ANALYSIS:\n${r1Output}`
+                        `USER PROMPT:\n${fullPrompt}\n\nGEMINI ANALYSIS:\n${r1Output}`,
+                        (chunk) => onStateUpdate('mixtral_chunk', chunk)
                     ).then(res => {
-                        onStateUpdate('mixtral_done', res);
+                        onStateUpdate('mixtral_done');
                         return `MIXTRAL BLINDSPOTS:\n${res}`;
                     })
                 );
