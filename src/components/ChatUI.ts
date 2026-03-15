@@ -505,7 +505,7 @@ export class ChatUI {
         if (!this.containerEl) return;
 
         const wrapper = document.createElement('div');
-        wrapper.className = `flex flex-col gap-1 w-full ${role === 'user' ? 'items-end' : 'items-start'}`;
+        wrapper.className = `flex flex-col gap-1 w-full ${role === 'user' ? 'items-end' : 'items-start'} animate-slide-up`;
 
         // Header (User or Agent)
         const header = document.createElement('div');
@@ -535,12 +535,12 @@ export class ChatUI {
         const bubbleWrapper = document.createElement('div');
 
         if (role === 'user') {
-            bubbleWrapper.className = "text-sm p-3 rounded-lg border max-w-[85%] whitespace-pre-wrap bg-blue-600/20 border-blue-500/30 text-blue-50";
+            bubbleWrapper.className = "text-sm p-3 rounded-lg border max-w-[85%] whitespace-pre-wrap bg-blue-600/20 shadow-lg shadow-blue-500/10 border-blue-500/30 text-blue-50 hover-glow transition-all";
             bubbleWrapper.textContent = text; // User input is raw text, no markdown translation needed.
         } else {
             const bubbleId = `history-msg-${Date.now()}-${Math.random().toString(36).substring(7)}`;
             bubbleWrapper.id = bubbleId;
-            bubbleWrapper.className = "text-sm p-4 rounded-lg border max-w-[90%] w-full bg-zinc-900/80 border-zinc-800/80 prose prose-invert break-words";
+            bubbleWrapper.className = "text-sm p-4 rounded-lg border max-w-[90%] w-full glass-panel prose prose-invert break-words hover-glow transition-all";
             // Request html from web worker
             bubbleWrapper.innerHTML = '<span class="text-zinc-500 animate-pulse">Rendering...</span>';
             this.markdownWorker.postMessage({ id: bubbleId, text });
@@ -558,7 +558,7 @@ export class ChatUI {
         if (!this.containerEl) return;
 
         const wrapper = document.createElement('div');
-        wrapper.className = "flex flex-col gap-1 w-full items-start animate-fade-in";
+        wrapper.className = "flex flex-col gap-1 w-full items-start animate-slide-up";
 
         const header = document.createElement('div');
         header.className = "text-xs font-medium text-zinc-500 flex items-center justify-between w-full mb-1";
@@ -577,7 +577,7 @@ export class ChatUI {
 
         const bubbleWrapper = document.createElement('div');
         bubbleWrapper.id = id; // Give ID so we can target innerHTML during stream
-        bubbleWrapper.className = "text-sm p-4 rounded-lg border max-w-[90%] w-full bg-zinc-900/80 border-zinc-800/80 prose prose-invert break-words";
+        bubbleWrapper.className = "text-sm p-4 rounded-lg border max-w-[90%] w-full glass-panel prose prose-invert break-words hover-glow transition-all";
 
         wrapper.appendChild(header);
         wrapper.appendChild(bubbleWrapper);
@@ -608,7 +608,7 @@ export class ChatUI {
         const id = `typing-${Date.now()}`;
         const wrapper = document.createElement('details');
         wrapper.id = id;
-        wrapper.className = "w-full my-4 bg-zinc-900/40 border border-zinc-800/50 rounded-lg overflow-hidden";
+        wrapper.className = "w-full my-4 glass-panel rounded-lg overflow-hidden animate-slide-up shadow-xl shadow-black/50 hover-glow transition-all";
         // Auto-open so users see the debate happening in real time
         wrapper.open = true;
 

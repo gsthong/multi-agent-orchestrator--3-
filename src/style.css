@@ -7,6 +7,41 @@
   }
 }
 
+@layer utilities {
+  .dynamic-bg {
+    background: radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.1) 0%, rgba(9, 9, 11, 1) 100%);
+    background-size: 200% 200%;
+    animation: gradientMove 15s ease infinite alternate;
+  }
+  
+  .glass-panel {
+    background: rgba(24, 24, 27, 0.6);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+  }
+
+  .hover-glow:hover {
+    box-shadow: 0 0 15px rgba(59, 130, 246, 0.3);
+    border-color: rgba(59, 130, 246, 0.5);
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+}
+
+@keyframes gradientMove {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+@keyframes slideUp {
+  0% { opacity: 0; transform: translateY(15px) scale(0.98); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
 /* Custom scrollbar to match the dark aesthetic */
 ::-webkit-scrollbar {
   width: 8px;

@@ -124,7 +124,7 @@ export class Sidebar {
         sessions.forEach(session => {
             const isActive = session.id === currentActiveId;
             const item = document.createElement('div');
-            item.className = `group flex items-center justify-between p-2 rounded-lg cursor-pointer transition ${isActive ? 'bg-zinc-800 text-zinc-100' : 'hover:bg-zinc-800/50 text-zinc-400 hover:text-zinc-200'}`;
+            item.className = `group flex items-center justify-between p-2 rounded-lg cursor-pointer transition-all duration-300 transform hover:scale-[1.02] ${isActive ? 'bg-zinc-800 text-zinc-100 shadow-lg border border-zinc-700/50' : 'hover:bg-zinc-800/50 text-zinc-400 hover:text-zinc-200 border border-transparent'}`;
 
             // Truncate title
             const titleSpan = document.createElement('span');

@@ -12,11 +12,11 @@
     integrity="sha384-GvrOXuhMATgEsSwCs4smul74iXGOixntILdUW9XmUC6+HX0sLNAK3q71bZlhw5v6" crossorigin="anonymous">
 </head>
 
-<body class="bg-zinc-950 text-zinc-50 font-sans h-screen w-screen overflow-hidden flex">
+<body class="bg-zinc-950 text-zinc-50 font-sans h-screen w-screen overflow-hidden flex dynamic-bg">
 
   <!-- Sidebar -->
   <aside id="sidebar"
-    class="w-64 bg-zinc-900 border-r border-zinc-800 flex flex-col transition-transform duration-300 absolute md:relative z-40 h-full -translate-x-full md:translate-x-0">
+    class="w-64 glass-panel border-r border-zinc-800 flex flex-col transition-transform duration-300 absolute md:relative z-40 h-full -translate-x-full md:translate-x-0">
     <div class="p-4 border-b border-zinc-800 flex items-center justify-between">
       <h1 class="font-bold text-lg text-zinc-100 flex items-center gap-2">
         <svg xmlns="http://www.w3.org/-2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none"
@@ -124,11 +124,11 @@
     </div>
 
     <!-- Input Area -->
-    <div class="p-4 border-t border-zinc-800 bg-zinc-950">
+    <div class="p-4 border-t border-zinc-800/50 glass-panel z-10">
       <div id="file-attachments-container" class="max-w-4xl mx-auto flex flex-wrap gap-2 mb-2 empty:hidden"></div>
 
       <div
-        class="max-w-4xl mx-auto relative flex items-end gap-2 bg-zinc-900 border border-zinc-700 rounded-xl p-2 focus-within:ring-1 focus-within:ring-blue-500 focus-within:border-blue-500 transition-shadow">
+        class="max-w-4xl mx-auto relative flex items-end gap-2 bg-zinc-900/50 border border-zinc-700/50 rounded-xl p-2 focus-within:ring-1 focus-within:ring-blue-500 focus-within:border-blue-500 transition-all hover-glow shadow-lg">
         <input type="file" id="file-upload-input" class="hidden" multiple
           accept=".txt,.md,.csv,.json,.js,.py,.html,.css" />
         <button id="attach-file-btn"
