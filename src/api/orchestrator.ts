@@ -2,6 +2,8 @@ import { GoogleGenAI } from '@google/genai';
 import { StorageUtils } from '../utils/storage';
 
 export class OrchestratorAPI {
+    private static currentAbortController: AbortController | null = null;
+
     /**
      * Helper function to call the Groq completions endpoint.
      */
@@ -46,7 +48,8 @@ export class OrchestratorAPI {
                 'Authorization': `Bearer ${groqKey}`,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(body)
+            body: JSON.stringify(body),
+            signal: this.currentAbortController?.signal
         });
 
         if (!res.ok) {
@@ -258,6 +261,13 @@ export class OrchestratorAPI {
         executeSearch?: (query: string) => Promise<string>
     ): Promise<string> {
 
+        // Setup global abort controller for this debate run
+        if (this.currentAbortController) {
+            this.currentAbortController.abort();
+        }
+        this.currentAbortController = new AbortController();
+        const signal = this.currentAbortController.signal;
+
         // Check both keys
         const geminiKey = StorageUtils.getApiKey();
         const groqKey = StorageUtils.getGroqKey();
@@ -339,6 +349,7 @@ export class OrchestratorAPI {
 
                 let currentCalls: any[] = [];
                 for await (const chunk of stream) {
+                    if (signal.aborted) throw new Error("Debate Interrupted by Voice");
                     if (chunk.text) {
                         r1Output += chunk.text;
                         onStateUpdate('gemini_chunk', chunk.text);
@@ -553,6 +564,11 @@ CRITICAL INSTRUCTIONS:
             return finalSynthesizedOutput;
 
         } catch (err: any) {
+            if (err.name === 'AbortError' || err.message.includes('Interrupted')) {
+                console.log("Debate was cleanly aborted.");
+                return "*(Debate interrupted by user)*";
+            }
+            
             console.error("Orchestrator Sequence Error:", err);
             let errorMsg = "An unexpected error occurred during the multi-agent debate.";
 
@@ -562,6 +578,16 @@ CRITICAL INSTRUCTIONS:
                 else errorMsg = err.message;
             }
             throw new Error(errorMsg);
+        }
+    }
+
+    /**
+     * Halts any currently running debate. Used by Voice Interruption.
+     */
+    static stopDebate() {
+        if (this.currentAbortController) {
+            this.currentAbortController.abort();
+            this.currentAbortController = null;
         }
     }
 
@@ -611,5 +637,34 @@ ${transcript}`;
         } catch (e) {
             console.error("Memory extraction failed", e);
         }
+    }
+
+    /**
+     * Synthesizes a completely formatted executive report of the debate transcript
+     */
+    static async generateReport(transcript: string, onFinalToken: (text: string) => void): Promise<string> {
+        const settings = StorageUtils.getAdvancedSettings();
+        
+        const systemPrompt = `You are a Senior Technical Writer and Analyst.
+Your task is to review the following Debate Transcript and create a professional, highly structured, beautiful Executive Summary Report.
+
+CRITICAL INSTRUCTIONS:
+1. Use professional Markdown formatting (Headers, Lists, Bold, Tables).
+2. Start with an "Executive Summary" paragraph.
+3. Include a "Key Arguments & Perspectives" section highlighting the different agent views.
+4. Conclude with a "Final Synthesis & Recommendations" section.
+5. If there's code or math, include it beautifully formatted.
+6. The entire report MUST be in English. Keep it concise but comprehensive.`;
+
+        const userPrompt = `DEBATE TRANSCRIPT:\n\n${transcript}`;
+
+        return await this.callGroq(
+            settings.models.llama,
+            systemPrompt,
+            userPrompt,
+            onFinalToken,
+            0.3,
+            'llama_report'
+        );
     }
 }

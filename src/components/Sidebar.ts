@@ -7,6 +7,7 @@ export class Sidebar {
     private closeBtn: HTMLElement | null;
     private newChatBtn: HTMLButtonElement | null;
     private clearBtn: HTMLButtonElement | null;
+    private generateReportBtn: HTMLButtonElement | null;
     private personaSelect: HTMLSelectElement | null;
     private titleEl: HTMLElement | null;
     private themeToggleBtn: HTMLButtonElement | null;
@@ -20,6 +21,7 @@ export class Sidebar {
         this.closeBtn = document.getElementById('close-sidebar-btn');
         this.newChatBtn = document.getElementById('new-chat-btn') as HTMLButtonElement;
         this.clearBtn = document.getElementById('clear-history-btn') as HTMLButtonElement;
+        this.generateReportBtn = document.getElementById('generate-report-btn') as HTMLButtonElement;
         this.personaSelect = document.getElementById('persona-selector') as HTMLSelectElement;
         this.titleEl = document.getElementById('mobile-header-title');
         this.themeToggleBtn = document.getElementById('theme-toggle-btn') as HTMLButtonElement;
@@ -80,6 +82,15 @@ export class Sidebar {
         // Clear History
         if (this.clearBtn) {
             this.clearBtn.addEventListener('click', () => this.handleClearHistory());
+        }
+
+        // Generate Report
+        if (this.generateReportBtn) {
+            this.generateReportBtn.addEventListener('click', async () => {
+                // If on mobile, close the sidebar so they can see it rendering
+                this.toggleSidebar(false);
+                await this.chatUI.generateAutoReport();
+            });
         }
 
         // Listen for async title updates from ChatUI

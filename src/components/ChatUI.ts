@@ -19,6 +19,8 @@ export class ChatUI {
     private isProcessing: boolean = false;
     private recognition: any = null;
     private isListening: boolean = false;
+    private isAgentSpeaking: boolean = false;
+    private activeAudioSource: AudioBufferSourceNode | null = null;
     private markdownWorker: Worker;
     private pythonWorker: Worker;
 
@@ -26,6 +28,7 @@ export class ChatUI {
     private fileInputEl: HTMLInputElement | null;
     private attachBtn: HTMLButtonElement | null;
     private attachmentsContainer: HTMLElement | null;
+    private audioContext: AudioContext | null = null;
     private pendingFiles: { name: string, content: string }[] = [];
     private pendingPythonExecutions: Map<string, { resolve: (val: string) => void, reject: (err: any) => void, output: string }> = new Map();
 
@@ -149,8 +152,10 @@ export class ChatUI {
 
                     if (lang === 'python') {
                         this.runPythonCode(code, execId);
-                    } else if (lang === 'javascript' || lang === 'html') {
+                    } else if (lang === 'javascript') {
                         this.runJavaScriptCode(code, outputContainer);
+                    } else if (lang === 'html') {
+                        this.runHtmlCode(code, outputContainer);
                     }
                 }
             }
@@ -239,25 +244,158 @@ export class ChatUI {
         if (this.micBtn) this.micBtn.classList.remove('text-red-500', 'animate-pulse');
     }
 
-    private speakText(text: string, buttonEl: HTMLElement) {
-        if (!('speechSynthesis' in window)) return;
+    private async speakText(text: string, buttonEl: HTMLElement) {
+        if (this.isAgentSpeaking) {
+            // Stop current speech if any
+            if (this.activeAudioSource) {
+                this.activeAudioSource.stop();
+                this.activeAudioSource = null;
+            }
+            window.speechSynthesis.cancel();
+        }
 
-        window.speechSynthesis.cancel();
+        this.isAgentSpeaking = true;
+
+        // Initialize AudioContext on first interaction
+        if (!this.audioContext) {
+            const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+            this.audioContext = new AudioContext();
+        }
+
+        if (this.audioContext.state === 'suspended') {
+            await this.audioContext.resume();
+        }
+
+        // Start listening for interruptions
+        this.startVoiceInterruptionDetection();
 
         const plainText = text
             .replace(/[#*_~`>]/g, '')
             .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
             .replace(/!\[([^\]]*)\]\([^\)]+\)/g, '');
 
-        const utterance = new SpeechSynthesisUtterance(plainText);
-
         const originalHtml = buttonEl.innerHTML;
-        buttonEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-pulse text-blue-400"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`;
+        buttonEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-pulse text-emerald-400"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`;
 
-        utterance.onend = () => { buttonEl.innerHTML = originalHtml; };
-        utterance.onerror = () => { buttonEl.innerHTML = originalHtml; };
+        try {
+            // Using a free TTS API to get audio data so we can route it through Web Audio API
+            const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(plainText.substring(0, 200))}&tl=en&client=tw-ob`;
+            
+            const response = await fetch(url);
+            const arrayBuffer = await response.arrayBuffer();
+            const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
 
-        window.speechSynthesis.speak(utterance);
+            const source = this.audioContext.createBufferSource();
+            source.buffer = audioBuffer;
+
+            // Spatialize the Audio
+            const panner = this.audioContext.createPanner();
+            panner.panningModel = 'HRTF';
+            panner.distanceModel = 'inverse';
+            panner.refDistance = 1;
+            panner.maxDistance = 10000;
+            panner.rolloffFactor = 1;
+            
+            // Randomly pan the agent to the left or right to simulate a "room" debate
+            const isLeft = Math.random() > 0.5;
+            panner.setPosition(isLeft ? -3 : 3, 0, -1);
+
+            source.connect(panner);
+            panner.connect(this.audioContext.destination);
+
+            this.activeAudioSource = source;
+
+            source.onended = () => {
+                buttonEl.innerHTML = originalHtml;
+                this.isAgentSpeaking = false;
+            };
+
+            source.start(0);
+        } catch (e) {
+            console.error("Spatial Audio TTS Failed falling back to native:", e);
+            // Fallback to native
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(plainText);
+                utterance.onend = () => { buttonEl.innerHTML = originalHtml; this.isAgentSpeaking = false; };
+                utterance.onerror = () => { buttonEl.innerHTML = originalHtml; this.isAgentSpeaking = false; };
+                window.speechSynthesis.speak(utterance);
+            } else {
+                buttonEl.innerHTML = originalHtml;
+                this.isAgentSpeaking = false;
+            }
+        }
+    }
+
+    private async startVoiceInterruptionDetection() {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+        
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            
+            // Need a context to analyze
+            if (!this.audioContext) {
+                const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+                this.audioContext = new AudioContext();
+            }
+
+            const source = this.audioContext.createMediaStreamSource(stream);
+            const analyser = this.audioContext.createAnalyser();
+            analyser.fftSize = 256;
+            source.connect(analyser);
+
+            const bufferLength = analyser.frequencyBinCount;
+            const dataArray = new Uint8Array(bufferLength);
+
+            const checkVolume = () => {
+                if (!this.isAgentSpeaking) {
+                    // Turn off mic stream when not speaking to save CPU/Privacy
+                    stream.getTracks().forEach(track => track.stop());
+                    return;
+                }
+
+                analyser.getByteFrequencyData(dataArray);
+                let sum = 0;
+                for (let i = 0; i < bufferLength; i++) {
+                    sum += dataArray[i];
+                }
+                const average = sum / bufferLength;
+
+                // Threshold for interruption
+                if (average > 35) { // Empirically, normal mic noise is <10, speaking is >40
+                    this.handleInterruption();
+                    stream.getTracks().forEach(track => track.stop());
+                    return;
+                }
+
+                requestAnimationFrame(checkVolume);
+            };
+
+            checkVolume();
+        } catch (e) {
+            console.warn("Could not start microphone for interruption detection:", e);
+        }
+    }
+
+    private handleInterruption() {
+        if (!this.isAgentSpeaking) return;
+
+        console.log("VOICE INTERRUPTION DETECTED!");
+        this.isAgentSpeaking = false;
+
+        // Cut off audio
+        if (this.activeAudioSource) {
+            this.activeAudioSource.stop();
+            this.activeAudioSource = null;
+        }
+        window.speechSynthesis.cancel();
+
+        // Optionally visual feedback
+        this.showErrorBubble("Process interrupted by user voice.");
+
+        // Re-open mic for them to speak
+        setTimeout(() => {
+            this.toggleListening();
+        }, 300);
     }
 
     private bindEvents() {
@@ -477,6 +615,63 @@ export class ChatUI {
     }
 
     // --- UI Helpers below ---
+
+    public async generateAutoReport() {
+        if (this.isProcessing) return;
+
+        const session = await StorageUtils.getActiveHistory();
+        if (session.messages.length === 0) {
+            this.showErrorBubble("No chat history to summarize. Please start a debate first.");
+            return;
+        }
+
+        this.isProcessing = true;
+        this.updateUIState();
+
+        const typingId = this.showTypingIndicator();
+        this.updateTypingIndicatorState(typingId, 'gemma', 'Synthesizing Executive Report...');
+
+        try {
+            // Wait slightly for DOM to update
+            await new Promise(resolve => setTimeout(resolve, 50));
+
+            const transcript = session.messages.map(m => `${m.role.toUpperCase()}:\n${m.parts[0].text}`).join('\n\n');
+
+            let firstChunk = true;
+            let fullStreamText = '';
+
+            const onFinalToken = (chunk: string) => {
+                if (firstChunk) {
+                    const el = document.getElementById(typingId);
+                    if (el) el.remove();
+                    this.createEmptyModelBubble(typingId);
+                    firstChunk = false;
+                }
+                fullStreamText += chunk;
+                this.markdownWorker.postMessage({ id: typingId, text: fullStreamText });
+            };
+
+            const report = await OrchestratorAPI.generateReport(transcript, onFinalToken);
+
+            this.markdownWorker.postMessage({ id: typingId, text: report });
+            await this.saveMessageToHistory('model', `**EXECUTIVE SUMMARY REPORT**\n\n${report}`);
+
+            const speakerBtn = document.getElementById(`speaker-btn-${typingId}`);
+            if (speakerBtn) {
+                speakerBtn.classList.remove('hidden');
+                speakerBtn.addEventListener('click', () => this.speakText(report, speakerBtn));
+            }
+
+        } catch (e: any) {
+            console.error('Report Generation Error', e);
+            const el = document.getElementById(typingId);
+            if (el) el.remove();
+            this.showErrorBubble(`Failed to generate report: ${e.message}`);
+        } finally {
+            this.isProcessing = false;
+            this.updateUIState();
+        }
+    }
 
     public async clearMessages(createEmptySession: boolean = true) {
         if (this.containerEl) {
@@ -720,6 +915,33 @@ export class ChatUI {
 
     private runPythonCode(code: string, execId: string) {
         this.pythonWorker.postMessage({ id: execId, pythonCode: code });
+    }
+
+    private runHtmlCode(code: string, outputEl: HTMLElement) {
+        outputEl.innerHTML = '';
+        const wrapper = document.createElement('div');
+        wrapper.className = 'w-full rounded-md overflow-hidden border border-zinc-700 bg-white/5 mt-2';
+        
+        const header = document.createElement('div');
+        header.className = 'bg-zinc-800/80 px-3 py-1 flex items-center justify-between text-xs text-zinc-400 font-mono';
+        header.innerHTML = `<span>Generative UI Sandbox</span><div class="flex gap-1"><span class="w-2 h-2 rounded-full bg-red-500"></span><span class="w-2 h-2 rounded-full bg-yellow-500"></span><span class="w-2 h-2 rounded-full bg-green-500"></span></div>`;
+        
+        const iframe = document.createElement('iframe');
+        iframe.style.width = '100%';
+        iframe.style.height = '400px';
+        iframe.style.border = 'none';
+        iframe.style.background = 'white'; // Default back to white for generic HTML renders
+        
+        // Inject some basic Tailwind from CDN just in case the agent tried to use it without importing
+        const tailwindScript = `<script src="https://cdn.tailwindcss.com"></script>`;
+        const hasTailwind = code.includes('tailwindcss.com');
+        
+        iframe.srcdoc = hasTailwind ? code : `${tailwindScript}\n${code}`;
+        
+        wrapper.appendChild(header);
+        wrapper.appendChild(iframe);
+        outputEl.appendChild(wrapper);
+        this.scrollToBottom();
     }
 
     private runJavaScriptCode(code: string, outputEl: HTMLElement) {
