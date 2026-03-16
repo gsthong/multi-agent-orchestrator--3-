@@ -431,13 +431,17 @@ export class ChatUI {
                 this.markdownWorker.postMessage({ id: typingId, text: fullStreamText });
             };
 
+            // Read selected debate format
+            const debateFormat = (document.getElementById('debate-format-selector') as HTMLSelectElement)?.value || 'standard';
+
             // Call the Orchestrator with fileContext included
             const finalResponse = await OrchestratorAPI.startDebate(
                 text,
                 fileContextStr,
                 onStateUpdate,
                 onFinalToken,
-                this.executePythonHidden.bind(this)
+                this.executePythonHidden.bind(this),
+                debateFormat
             );
 
             // 5. Stream complete, format finally and save history

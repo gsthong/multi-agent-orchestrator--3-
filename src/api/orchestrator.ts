@@ -135,6 +135,7 @@ export class OrchestratorAPI {
         onStateUpdate: (state: string, output?: string) => void,
         onFinalToken: (text: string) => void,
         executePython?: (code: string) => Promise<string>,
+        debateFormat: string = 'standard'
     ): Promise<string> {
 
         // Check both keys
@@ -165,6 +166,16 @@ export class OrchestratorAPI {
             fullPrompt = `${fileContext}\n\n${fullPrompt}`;
         }
 
+        // Debate Format Modifiers
+        let formatModifier = "";
+        if (debateFormat === 'courtroom') {
+            formatModifier = " [ROLEPLAY ENFORCED: COURTROOM TRIAL. You must act as a legal counsel. Argue your perspective vehemently as if convincing a jury. Provide evidence, cite precedents, and aggressively cross-examine flaws in the user's premise or other agents.]";
+        } else if (debateFormat === 'socratic') {
+            formatModifier = " [ROLEPLAY ENFORCED: SOCRATIC DIALOGUE. Instead of just giving the answer, heavily utilize the Socratic method. Ask profound, guiding questions that force the user and other agents to deeply question their fundamental assumptions.]";
+        } else if (debateFormat === 'brainstorm') {
+            formatModifier = " [ROLEPLAY ENFORCED: RAPID BRAINSTORM. Ignore perfection. Throw out as many wild, creative, and unconstrained ideas as possible in a rapid-fire list format.]";
+        }
+
         try {
             // -----------------------------------------------------
             // ROUND 1: GEMINI-PRIME (Lead Analyst)
@@ -173,7 +184,7 @@ export class OrchestratorAPI {
             this.emitTelemetry('gemini', 0, 0, 'active');
             const startTime = performance.now();
             
-            const geminiInstruction = `You are GEMINI-PRIME, an elite lead analyst and architectural thinker. Provide a comprehensive, multi-dimensional ANALYSIS of the user's prompt. Break down the core intent, analyze constraints, and propose a clear, structured theoretical approach. Do NOT just give the final answer; your goal is to establish the absolute best foundational context and step-by-step logic for other agents to build upon. Be precise, logical, and highly structured.`;
+            const geminiInstruction = `You are GEMINI-PRIME, an elite lead analyst and architectural thinker. Provide a comprehensive, multi-dimensional ANALYSIS of the user's prompt. Break down the core intent, analyze constraints, and propose a clear, structured theoretical approach. Do NOT just give the final answer; your goal is to establish the absolute best foundational context and step-by-step logic for other agents to build upon. Be precise, logical, and highly structured.${formatModifier}`;
 
             let r1Output = '';
             let contents: any[] = [{ role: 'user', parts: [{ text: fullPrompt }] }];
@@ -254,7 +265,7 @@ export class OrchestratorAPI {
                 promises.push(
                     this.callGroq(
                         settings.models.deepSeek,
-                        'You are DEEPSEEK-REASONER, a rigorous, analytical, and highly logical AI. Your objective is to peer-review the initial analysis provided by GEMINI-PRIME against the user\'s prompt. Identify logical gaps, invalid assumptions, edge cases, and potential inefficiencies. Provide highly optimized, constructive alternatives. Output ONLY your review and proposed optimizations.',
+                        `You are DEEPSEEK-REASONER, a rigorous, analytical, and highly logical AI. Your objective is to peer-review the initial analysis provided by GEMINI-PRIME against the user's prompt. Identify logical gaps, invalid assumptions, edge cases, and potential inefficiencies. Provide highly optimized, constructive alternatives. Output ONLY your review and proposed optimizations.${formatModifier}`,
                         `USER PROMPT:\n${fullPrompt}\n\nGEMINI ANALYSIS:\n${r1Output}`,
                         (chunk) => onStateUpdate('deepseek_chunk', chunk),
                         undefined,
@@ -273,7 +284,7 @@ export class OrchestratorAPI {
                 promises.push(
                     this.callGroq(
                         settings.models.qwen,
-                        'You are QWEN-ARCHITECT, an incredibly thorough, detail-oriented engineering expert. Review the USER PROMPT and GEMINI ANALYSIS. Provide a grounded, structured perspective focusing on practical execution. Detail exactly how to implement the best ideas, focusing on modern best practices, clean code/patterns, scalability, and handling edge cases.',
+                        `You are QWEN-ARCHITECT, an incredibly thorough, detail-oriented engineering expert. Review the USER PROMPT and GEMINI ANALYSIS. Provide a grounded, structured perspective focusing on practical execution. Detail exactly how to implement the best ideas, focusing on modern best practices, clean code/patterns, scalability, and handling edge cases.${formatModifier}`,
                         `USER PROMPT:\n${fullPrompt}\n\nGEMINI ANALYSIS:\n${r1Output}`,
                         (chunk) => onStateUpdate('qwen_chunk', chunk),
                         undefined,
@@ -292,7 +303,7 @@ export class OrchestratorAPI {
                 promises.push(
                     this.callGroq(
                         settings.models.mixtral,
-                        'You are MIXTRAL-CREATOR, an outside-the-box thinker and security expert. You look at the problem from an entirely different angle. Review the USER PROMPT and GEMINI ANALYSIS. Point out any massive blind spots, security vulnerabilities, or drastically simpler/more creative ways to solve the problem that earlier analysis missed.',
+                        `You are MIXTRAL-CREATOR, an outside-the-box thinker and security expert. You look at the problem from an entirely different angle. Review the USER PROMPT and GEMINI ANALYSIS. Point out any massive blind spots, security vulnerabilities, or drastically simpler/more creative ways to solve the problem that earlier analysis missed.${formatModifier}`,
                         `USER PROMPT:\n${fullPrompt}\n\nGEMINI ANALYSIS:\n${r1Output}`,
                         (chunk) => onStateUpdate('mixtral_chunk', chunk),
                         undefined,
