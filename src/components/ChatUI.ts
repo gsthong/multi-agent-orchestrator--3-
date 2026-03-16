@@ -441,7 +441,8 @@ export class ChatUI {
                 onStateUpdate,
                 onFinalToken,
                 this.executePythonHidden.bind(this),
-                debateFormat
+                debateFormat,
+                this.duckduckgoSearch.bind(this)
             );
 
             // 5. Stream complete, format finally and save history
@@ -794,5 +795,38 @@ export class ChatUI {
         `;
 
         iframe.srcdoc = html;
+    }
+
+    private async duckduckgoSearch(query: string): Promise<string> {
+        try {
+            // Using DuckDuckGo HTML version which is easier to scrape than the dynamic JS version.
+            // Using a cors proxy since we are running in browser. In a real app, this should be a backend route.
+            const url = `https://corsproxy.io/?${encodeURIComponent('https://html.duckduckgo.com/html/?q=' + encodeURIComponent(query))}`;
+            const response = await fetch(url);
+            if (!response.ok) {
+                return `Search failed: HTTP ${response.status}`;
+            }
+            const html = await response.text();
+            
+            // Simple fast scraping via DOMParser
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(html, 'text/html');
+            const results = doc.querySelectorAll('.result');
+            
+            if (results.length === 0) return "No web search results found.";
+
+            let summary = "";
+            for (let i = 0; i < Math.min(results.length, 5); i++) {
+                const title = results[i].querySelector('.result__title')?.textContent?.trim() || 'No Title';
+                const snippet = results[i].querySelector('.result__snippet')?.textContent?.trim() || 'No Snippet';
+                const link = (results[i].querySelector('.result__url') as HTMLAnchorElement)?.href || 'No Link';
+                summary += `[${i+1}] ${title}\n${snippet}\nURL: ${link}\n\n`;
+            }
+            
+            return summary;
+        } catch (e: any) {
+            console.error("DuckDuckGo search error:", e);
+            return `Search failed: ${e.toString()}`;
+        }
     }
 }

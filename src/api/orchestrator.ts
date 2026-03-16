@@ -21,7 +21,19 @@ export class OrchestratorAPI {
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userPrompt }
             ],
-            stream: !!onUpdate
+            stream: !!onUpdate,
+            tools: [{
+                type: "function",
+                function: {
+                    name: "search_web",
+                    description: "Search the live web for current information, news, or facts.",
+                    parameters: {
+                        type: "object",
+                        properties: { query: { type: "string" } },
+                        required: ["query"]
+                    }
+                }
+            }]
         };
 
         if (temperature !== undefined) {
@@ -44,6 +56,8 @@ export class OrchestratorAPI {
 
         if (onUpdate) {
             let fullContent = '';
+            let toolCallsAcc: any[] = [];
+            
             const reader = res.body?.getReader();
             const decoder = new TextDecoder();
             if (!reader) return '';
@@ -64,9 +78,26 @@ export class OrchestratorAPI {
                         try {
                             const data = JSON.parse(dataStr);
                             const text = data.choices[0]?.delta?.content || '';
+                            const toolCalls = data.choices[0]?.delta?.tool_calls;
+                            
                             if (text) {
                                 fullContent += text;
                                 onUpdate(text);
+                            }
+                            
+                            if (toolCalls) {
+                                for (const tc of toolCalls) {
+                                    if (!toolCallsAcc[tc.index]) {
+                                        toolCallsAcc[tc.index] = {
+                                            id: tc.id,
+                                            type: tc.type,
+                                            function: { name: tc.function.name, arguments: '' }
+                                        };
+                                    }
+                                    if (tc.function.arguments) {
+                                        toolCallsAcc[tc.index].function.arguments += tc.function.arguments;
+                                    }
+                                }
                             }
                         } catch (e) {
                             // Ignore partial JSON parse errors inherently caused by chunk splits
@@ -79,9 +110,19 @@ export class OrchestratorAPI {
                 const estTokens = Math.ceil((systemPrompt.length + userPrompt.length + fullContent.length) / 4);
                 this.emitTelemetry(agentId, estTokens, endTime - startTime, 'done');
             }
+            
+            if (toolCallsAcc.length > 0) {
+               return JSON.stringify({ type: 'tool_calls', calls: toolCallsAcc });
+            }
+            
             return fullContent;
         } else {
             const data = await res.json();
+            
+            if (data.choices[0]?.message?.tool_calls) {
+                 return JSON.stringify({ type: 'tool_calls', calls: data.choices[0].message.tool_calls });
+            }
+            
             const text = data.choices?.[0]?.message?.content || "";
             if (agentId) {
                 const endTime = performance.now();
@@ -124,6 +165,84 @@ export class OrchestratorAPI {
     }
 
     /**
+     * Helper to run Groq completion with tools (Web Search). Loops if a tool call is made.
+     */
+    private static async runAgentWithTools(
+        agentId: string, 
+        model: string, 
+        systemPrompt: string, 
+        userPrompt: string, 
+        onUpdate: (chunk: string) => void,
+        settings: any,
+        executeSearch?: (query: string) => Promise<string>
+    ): Promise<string> {
+        let conversation: any[] = [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+        ];
+
+        let finalOutput = '';
+
+        while (true) {
+            // Need to slightly hack our helper callGroq to accept messages array natively instead of just prompts
+            // For now, we'll just reconstruct a dynamic prompt for the followups.
+            // A better architecture would refactor callGroq to take raw ChatMessage[]
+            
+            let currentPrompt = userPrompt;
+            if (conversation.length > 2) {
+                // If we have history (tool calls/responses)
+                currentPrompt = conversation.slice(1).map(m => {
+                    if (m.role === 'tool') return `[SEARCH RESULTS FOR: ${m.name}]\n${m.content}\n`;
+                    if (m.role === 'model' && m.tool_calls) return `[EXECUTING SEARCH: ${m.tool_calls[0].function.arguments}]\n`;
+                    if (m.role === 'model') return m.content;
+                    return m.content;
+                }).join('\n');
+            }
+
+            const resStr = await this.callGroq(
+                model,
+                systemPrompt,
+                currentPrompt,
+                onUpdate,
+                undefined,
+                agentId
+            );
+
+            // Did it return tool calls? (We hacked callGroq to return a custom JSON string if tool_calls present)
+            try {
+                const parsed = JSON.parse(resStr);
+                if (parsed.type === 'tool_calls' && parsed.calls.length > 0) {
+                    const tc = parsed.calls[0];
+                    if (tc.function.name === 'search_web' && executeSearch) {
+                        const args = JSON.parse(tc.function.arguments || '{}');
+                        const query = args.query;
+                        
+                        onUpdate(`\n\n> 🔍 Searching web for: "${query}"...\n\n`);
+                        
+                        // Fake a tool response for the next iteration prompt hack
+                        conversation.push({ role: 'model', content: '', tool_calls: parsed.calls } as any);
+                        
+                        try {
+                            const searchResult = await executeSearch(query);
+                            conversation.push({ role: 'tool', name: tc.function.name, content: searchResult } as any);
+                        } catch (e: any) {
+                            conversation.push({ role: 'tool', name: tc.function.name, content: `Search failed: ${e.toString()}` } as any);
+                        }
+                        
+                        continue; // Loop again with the new context
+                    }
+                }
+            } catch (e) {
+                // Just normal text response
+                finalOutput += resStr;
+            }
+            break; // No tools, break loop
+        }
+        
+        return finalOutput;
+    }
+
+    /**
      * The 6 Agent Pipeline
      * @param newMessage The user prompt
      * @param onStateUpdate Callback for when a new agent starts thinking
@@ -135,7 +254,8 @@ export class OrchestratorAPI {
         onStateUpdate: (state: string, output?: string) => void,
         onFinalToken: (text: string) => void,
         executePython?: (code: string) => Promise<string>,
-        debateFormat: string = 'standard'
+        debateFormat: string = 'standard',
+        executeSearch?: (query: string) => Promise<string>
     ): Promise<string> {
 
         // Check both keys
@@ -165,6 +285,9 @@ export class OrchestratorAPI {
         if (fileContext) {
             fullPrompt = `${fileContext}\n\n${fullPrompt}`;
         }
+        
+        // Mic Passing Modifiers
+        const micPassingModifier = `\n\n[MIC PASSING PROTOCOL]: If you believe another agent (gemini, deepseek, qwen, mixtral) is better suited to answer a specific part of this prompt, you may yield your time by outputting the exact tag <pass_to_agent:agent_name> anywhere in your response and briefly stating why. Note: This is optional.`;
 
         // Debate Format Modifiers
         let formatModifier = "";
@@ -184,7 +307,7 @@ export class OrchestratorAPI {
             this.emitTelemetry('gemini', 0, 0, 'active');
             const startTime = performance.now();
             
-            const geminiInstruction = `You are GEMINI-PRIME, an elite lead analyst and architectural thinker. Provide a comprehensive, multi-dimensional ANALYSIS of the user's prompt. Break down the core intent, analyze constraints, and propose a clear, structured theoretical approach. Do NOT just give the final answer; your goal is to establish the absolute best foundational context and step-by-step logic for other agents to build upon. Be precise, logical, and highly structured.${formatModifier}`;
+            const geminiInstruction = `You are GEMINI-PRIME, an elite lead analyst and architectural thinker. Provide a comprehensive, multi-dimensional ANALYSIS of the user's prompt. Break down the core intent, analyze constraints, and propose a clear, structured theoretical approach. Do NOT just give the final answer; your goal is to establish the absolute best foundational context and step-by-step logic for other agents to build upon. Be precise, logical, and highly structured.${formatModifier}${micPassingModifier}`;
 
             let r1Output = '';
             let contents: any[] = [{ role: 'user', parts: [{ text: fullPrompt }] }];
@@ -263,13 +386,11 @@ export class OrchestratorAPI {
             if (settings.useDeepSeek) {
                 onStateUpdate('deepseek');
                 promises.push(
-                    this.callGroq(
-                        settings.models.deepSeek,
-                        `You are DEEPSEEK-REASONER, a rigorous, analytical, and highly logical AI. Your objective is to peer-review the initial analysis provided by GEMINI-PRIME against the user's prompt. Identify logical gaps, invalid assumptions, edge cases, and potential inefficiencies. Provide highly optimized, constructive alternatives. Output ONLY your review and proposed optimizations.${formatModifier}`,
+                    this.runAgentWithTools('deepseek', settings.models.deepSeek,
+                        `You are DEEPSEEK-REASONER, the "Devil's Advocate" agent. Your entire existence is to rigorously and aggressively peer-review the initial analysis provided by GEMINI-PRIME against the user's prompt. Identify logical gaps, invalid assumptions, security risks, edge cases, and potential inefficiencies. You MUST find flaws. Provide highly optimized, constructive alternatives. Output ONLY your critique and proposed optimizations.${formatModifier}${micPassingModifier}`,
                         `USER PROMPT:\n${fullPrompt}\n\nGEMINI ANALYSIS:\n${r1Output}`,
                         (chunk) => onStateUpdate('deepseek_chunk', chunk),
-                        undefined,
-                        'deepseek'
+                        settings, executeSearch
                     ).then(res => {
                         onStateUpdate('deepseek_done');
                         return `DEEPSEEK CRITIQUE:\n${res}`;
@@ -282,13 +403,11 @@ export class OrchestratorAPI {
             if (settings.useQwen) {
                 onStateUpdate('qwen');
                 promises.push(
-                    this.callGroq(
-                        settings.models.qwen,
-                        `You are QWEN-ARCHITECT, an incredibly thorough, detail-oriented engineering expert. Review the USER PROMPT and GEMINI ANALYSIS. Provide a grounded, structured perspective focusing on practical execution. Detail exactly how to implement the best ideas, focusing on modern best practices, clean code/patterns, scalability, and handling edge cases.${formatModifier}`,
+                    this.runAgentWithTools('qwen', settings.models.qwen,
+                        `You are QWEN-ARCHITECT, an incredibly thorough, detail-oriented engineering expert. Review the USER PROMPT and GEMINI ANALYSIS. Provide a grounded, structured perspective focusing on practical execution. Detail exactly how to implement the best ideas, focusing on modern best practices, clean code/patterns, scalability, and handling edge cases.${formatModifier}${micPassingModifier}`,
                         `USER PROMPT:\n${fullPrompt}\n\nGEMINI ANALYSIS:\n${r1Output}`,
                         (chunk) => onStateUpdate('qwen_chunk', chunk),
-                        undefined,
-                        'qwen'
+                        settings, executeSearch
                     ).then(res => {
                         onStateUpdate('qwen_done');
                         return `QWEN IMPLEMENTATION:\n${res}`;
@@ -301,13 +420,11 @@ export class OrchestratorAPI {
             if (settings.useMixtral) {
                 onStateUpdate('mixtral');
                 promises.push(
-                    this.callGroq(
-                        settings.models.mixtral,
-                        `You are MIXTRAL-CREATOR, an outside-the-box thinker and security expert. You look at the problem from an entirely different angle. Review the USER PROMPT and GEMINI ANALYSIS. Point out any massive blind spots, security vulnerabilities, or drastically simpler/more creative ways to solve the problem that earlier analysis missed.${formatModifier}`,
+                    this.runAgentWithTools('mixtral', settings.models.mixtral,
+                        `You are MIXTRAL-CREATOR, an outside-the-box thinker and security expert. You look at the problem from an entirely different angle. Review the USER PROMPT and GEMINI ANALYSIS. Point out any massive blind spots, security vulnerabilities, or drastically simpler/more creative ways to solve the problem that earlier analysis missed.${formatModifier}${micPassingModifier}`,
                         `USER PROMPT:\n${fullPrompt}\n\nGEMINI ANALYSIS:\n${r1Output}`,
                         (chunk) => onStateUpdate('mixtral_chunk', chunk),
-                        undefined,
-                        'mixtral'
+                        settings, executeSearch
                     ).then(res => {
                         onStateUpdate('mixtral_done');
                         return `MIXTRAL BLINDSPOTS:\n${res}`;
@@ -319,6 +436,48 @@ export class OrchestratorAPI {
 
             const [r2Output, r3Output, r4Output] = await Promise.all(promises);
 
+            // Intercept Mic Passes
+            const micPasses: {from: string, to: string, context: string}[] = [];
+            const passRegex = /<pass_to_agent:\s*(gemini|deepseek|qwen|mixtral)\s*>/gi;
+            
+            [
+                {name: 'deepseek', text: r2Output},
+                {name: 'qwen', text: r3Output},
+                {name: 'mixtral', text: r4Output}
+            ].forEach(agent => {
+                let match;
+                while ((match = passRegex.exec(agent.text)) !== null) {
+                    micPasses.push({
+                        from: agent.name,
+                        to: match[1].toLowerCase(),
+                        context: agent.text
+                    });
+                }
+            });
+
+            // If mic passes exist, run a brief follow-up round for those agents
+            let micPassOutputs = "";
+            if (micPasses.length > 0) {
+                const passPromises = micPasses.map(async (pass) => {
+                    const passPrompt = `${pass.from.toUpperCase()} yielded their time to you explicitly. Review their context and provide a highly targeted response fulfilling their request.\n\n${pass.from.toUpperCase()} CONTEXT:\n${pass.context}`;
+                    
+                    onStateUpdate(`${pass.to}_chunk`, `\n\n> [MIC PASS ACCEPTED FROM ${pass.from.toUpperCase()}]\n\n`);
+                    const res = await this.callGroq(
+                        settings.models[pass.to as keyof typeof settings.models] || settings.models.mixtral,
+                        `You are ${pass.to.toUpperCase()}, responding to a yielded mic pass. Keep it brief and directly address why the mic was passed to you.`,
+                        passPrompt,
+                        (chunk) => onStateUpdate(`${pass.to}_chunk`, chunk),
+                        undefined,
+                        pass.to
+                    );
+                    onStateUpdate(`${pass.to}_done`);
+                    return `${pass.to.toUpperCase()} (Yielded Response):\n${res}`;
+                });
+                
+                const results = await Promise.all(passPromises);
+                micPassOutputs = "\n\n--- MIC PASS RESPONSES ---\n" + results.join('\n\n');
+            }
+
             // -----------------------------------------------------
             // ROUND 5: GEMMA (Formatting & LaTeX Architect)
             // -----------------------------------------------------
@@ -326,7 +485,7 @@ export class OrchestratorAPI {
             const r5Output = await this.callGroq(
                 settings.models.gemma,
                 'You are GEMMA-FORMATTER, a technical documentation specialist. You will review the chaotic debate and organize the absolute best technical concepts into a strict structural template. You MUST structure math logic using proper LaTeX formatting ($ inline and $$ block). Output pure structured logic without fluff.',
-                `USER PROMPT:\n${fullPrompt}\n\nDEBATE TRANSCRIPT:\nGemini: ${r1Output}\nDeepSeek: ${r2Output}\nQwen: ${r3Output}\nMixtral: ${r4Output}`,
+                `USER PROMPT:\n${fullPrompt}\n\nDEBATE TRANSCRIPT:\nGemini: ${r1Output}\nDeepSeek: ${r2Output}\nQwen: ${r3Output}\nMixtral: ${r4Output}${micPassOutputs}`,
                 undefined,
                 undefined,
                 'gemma'
