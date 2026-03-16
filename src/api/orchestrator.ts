@@ -5,9 +5,15 @@ export class OrchestratorAPI {
     /**
      * Helper function to call the Groq completions endpoint.
      */
-    private static async callGroq(model: string, systemPrompt: string, userPrompt: string, onUpdate?: (chunk: string) => void, temperature?: number): Promise<string> {
+    private static async callGroq(model: string, systemPrompt: string, userPrompt: string, onUpdate?: (chunk: string) => void, temperature?: number, agentId?: string): Promise<string> {
         const groqKey = StorageUtils.getGroqKey();
         if (!groqKey) throw new Error("Groq API Key is missing.");
+
+        let startTime = 0;
+        if (agentId) {
+            this.emitTelemetry(agentId, 0, 0, 'active');
+            startTime = performance.now();
+        }
 
         const body: any = {
             model,
@@ -68,11 +74,32 @@ export class OrchestratorAPI {
                     }
                 }
             }
+            if (agentId) {
+                const endTime = performance.now();
+                const estTokens = Math.ceil((systemPrompt.length + userPrompt.length + fullContent.length) / 4);
+                this.emitTelemetry(agentId, estTokens, endTime - startTime, 'done');
+            }
             return fullContent;
         } else {
             const data = await res.json();
-            return data.choices?.[0]?.message?.content || "";
+            const text = data.choices?.[0]?.message?.content || "";
+            if (agentId) {
+                const endTime = performance.now();
+                const estTokens = Math.ceil((systemPrompt.length + userPrompt.length + text.length) / 4);
+                this.emitTelemetry(agentId, estTokens, endTime - startTime, 'done');
+            }
+            return text;
         }
+    }
+
+    /**
+     * Helper to emit telemetry to the DashboardUI
+     */
+    private static emitTelemetry(agent: string, tokens: number, latencyMs: number, status: 'pending' | 'active' | 'done' | 'error') {
+        const event = new CustomEvent('telemetry-update', {
+            detail: { agent, tokens, latencyMs, status }
+        });
+        window.dispatchEvent(event);
     }
 
     /**
@@ -143,6 +170,9 @@ export class OrchestratorAPI {
             // ROUND 1: GEMINI-PRIME (Lead Analyst)
             // -----------------------------------------------------
             onStateUpdate('gemini');
+            this.emitTelemetry('gemini', 0, 0, 'active');
+            const startTime = performance.now();
+            
             const geminiInstruction = `You are GEMINI-PRIME, an elite lead analyst and architectural thinker. Provide a comprehensive, multi-dimensional ANALYSIS of the user's prompt. Break down the core intent, analyze constraints, and propose a clear, structured theoretical approach. Do NOT just give the final answer; your goal is to establish the absolute best foundational context and step-by-step logic for other agents to build upon. Be precise, logical, and highly structured.`;
 
             let r1Output = '';
@@ -209,6 +239,9 @@ export class OrchestratorAPI {
                     break;
                 }
             }
+            const endTime = performance.now();
+            const estTokens = Math.ceil((fullPrompt.length + r1Output.length) / 4);
+            this.emitTelemetry('gemini', estTokens, endTime - startTime, 'done');
             onStateUpdate('gemini_done', '');
 
             // -----------------------------------------------------
@@ -223,7 +256,9 @@ export class OrchestratorAPI {
                         settings.models.deepSeek,
                         'You are DEEPSEEK-REASONER, a rigorous, analytical, and highly logical AI. Your objective is to peer-review the initial analysis provided by GEMINI-PRIME against the user\'s prompt. Identify logical gaps, invalid assumptions, edge cases, and potential inefficiencies. Provide highly optimized, constructive alternatives. Output ONLY your review and proposed optimizations.',
                         `USER PROMPT:\n${fullPrompt}\n\nGEMINI ANALYSIS:\n${r1Output}`,
-                        (chunk) => onStateUpdate('deepseek_chunk', chunk)
+                        (chunk) => onStateUpdate('deepseek_chunk', chunk),
+                        undefined,
+                        'deepseek'
                     ).then(res => {
                         onStateUpdate('deepseek_done');
                         return `DEEPSEEK CRITIQUE:\n${res}`;
@@ -240,7 +275,9 @@ export class OrchestratorAPI {
                         settings.models.qwen,
                         'You are QWEN-ARCHITECT, an incredibly thorough, detail-oriented engineering expert. Review the USER PROMPT and GEMINI ANALYSIS. Provide a grounded, structured perspective focusing on practical execution. Detail exactly how to implement the best ideas, focusing on modern best practices, clean code/patterns, scalability, and handling edge cases.',
                         `USER PROMPT:\n${fullPrompt}\n\nGEMINI ANALYSIS:\n${r1Output}`,
-                        (chunk) => onStateUpdate('qwen_chunk', chunk)
+                        (chunk) => onStateUpdate('qwen_chunk', chunk),
+                        undefined,
+                        'qwen'
                     ).then(res => {
                         onStateUpdate('qwen_done');
                         return `QWEN IMPLEMENTATION:\n${res}`;
@@ -257,7 +294,9 @@ export class OrchestratorAPI {
                         settings.models.mixtral,
                         'You are MIXTRAL-CREATOR, an outside-the-box thinker and security expert. You look at the problem from an entirely different angle. Review the USER PROMPT and GEMINI ANALYSIS. Point out any massive blind spots, security vulnerabilities, or drastically simpler/more creative ways to solve the problem that earlier analysis missed.',
                         `USER PROMPT:\n${fullPrompt}\n\nGEMINI ANALYSIS:\n${r1Output}`,
-                        (chunk) => onStateUpdate('mixtral_chunk', chunk)
+                        (chunk) => onStateUpdate('mixtral_chunk', chunk),
+                        undefined,
+                        'mixtral'
                     ).then(res => {
                         onStateUpdate('mixtral_done');
                         return `MIXTRAL BLINDSPOTS:\n${res}`;
@@ -276,9 +315,42 @@ export class OrchestratorAPI {
             const r5Output = await this.callGroq(
                 settings.models.gemma,
                 'You are GEMMA-FORMATTER, a technical documentation specialist. You will review the chaotic debate and organize the absolute best technical concepts into a strict structural template. You MUST structure math logic using proper LaTeX formatting ($ inline and $$ block). Output pure structured logic without fluff.',
-                `USER PROMPT:\n${fullPrompt}\n\nDEBATE TRANSCRIPT:\nGemini: ${r1Output}\nDeepSeek: ${r2Output}\nQwen: ${r3Output}\nMixtral: ${r4Output}`
+                `USER PROMPT:\n${fullPrompt}\n\nDEBATE TRANSCRIPT:\nGemini: ${r1Output}\nDeepSeek: ${r2Output}\nQwen: ${r3Output}\nMixtral: ${r4Output}`,
+                undefined,
+                undefined,
+                'gemma'
             );
             onStateUpdate('gemma_done', r5Output);
+
+            // -----------------------------------------------------
+            // PARALLEL ROUND: CONFLICT MATRIX GENERATOR
+            // -----------------------------------------------------
+            // Create a background job to quickly analyze the transcripts and output a JSON conflict matrix
+            // This runs concurrently with Gemma/Llama so it costs zero perceivable time to the user.
+            const matrixPrompt = `You are a strict data-extraction AI. Analyze the Debate Transcript. Your ONLY goal is to score how much the agents disagree or conflict with each other mathematically on a scale of 0 to 100 (0=Total Agreement/Same Ideas, 100=Total Disagreement/Opposite Ideas).
+
+Analyze: Gemini, DeepSeek, Qwen, Mixtral.
+
+You MUST output ONLY a pure JSON object mapping the lowercase agent pairs to their integer score. No markdown blocks, no text, just JSON.
+Example format:
+{ "gemini_deepseek": 25, "gemini_qwen": 10, "gemini_mixtral": 80, "deepseek_qwen": 45, "deepseek_mixtral": 90, "qwen_mixtral": 75 }`;
+            
+            this.callGroq(
+                'llama-3.1-8b-instant', 
+                matrixPrompt,
+                `DEBATE TRANSCRIPT:\nGemini: ${r1Output}\nDeepSeek: ${r2Output}\nQwen: ${r3Output}\nMixtral: ${r4Output}`,
+                undefined,
+                0.1
+            ).then(matrixJsonStr => {
+                try {
+                    // Strip any accidental markdown formatting the model might spit out
+                    const cleanJson = matrixJsonStr.replace(/```json/g, '').replace(/```/g, '').trim();
+                    const matrixData = JSON.parse(cleanJson);
+                    window.dispatchEvent(new CustomEvent('matrix-update', { detail: matrixData }));
+                } catch (e) {
+                    console.error("Failed to parse matrix JSON", e, matrixJsonStr);
+                }
+            }).catch(e => console.error("Matrix generation failed", e));
 
             // -----------------------------------------------------
             // ROUND 6: LLAMA (Ultimate Synthesizer - Streamed to UI)
@@ -304,7 +376,8 @@ CRITICAL INSTRUCTIONS:
                 finalSystemPrompt,
                 debateContext,
                 onFinalToken,
-                settings.temperature
+                settings.temperature,
+                'llama'
             );
 
             return finalSynthesizedOutput;

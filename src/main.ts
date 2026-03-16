@@ -3,6 +3,8 @@ import { ApiModal } from './components/ApiModal';
 import { SettingsModal } from './components/SettingsModal';
 import { Sidebar } from './components/Sidebar';
 import { ChatUI } from './components/ChatUI';
+import { DashboardUI } from './components/DashboardUI';
+import { MatrixUI } from './components/MatrixUI';
 
 // The main application class
 class App {
@@ -10,12 +12,16 @@ class App {
     private settingsModal: SettingsModal;
     private sidebar: Sidebar;
     private chatUI: ChatUI;
+    private dashboardUI: DashboardUI;
+    private matrixUI: MatrixUI;
 
     constructor() {
         this.apiModal = new ApiModal();
         this.settingsModal = new SettingsModal();
         this.chatUI = new ChatUI();
         this.sidebar = new Sidebar(this.chatUI);
+        this.dashboardUI = new DashboardUI();
+        this.matrixUI = new MatrixUI();
 
         this.init();
     }
