@@ -564,4 +564,52 @@ CRITICAL INSTRUCTIONS:
             throw new Error(errorMsg);
         }
     }
+
+    /**
+     * Extracts a Semantic Concept Graph from a debate conversation
+     */
+    static async extractMemoryGraph(transcript: string) {
+        const geminiKey = StorageUtils.getApiKey();
+        if (!geminiKey) return;
+        
+        const prompt = `
+You are an advanced Knowledge Graph Extraction Pipeline.
+Analyze the following debate transcript and extract key entities and their relationships.
+Focus on concrete technical concepts, people, projects, and technologies.
+Classify entity types specifically as exactly one of: 'concept', 'technology', 'person', 'project', or 'entity'.
+
+Output valid JSON exactly in this format:
+{
+    "nodes": [ { "id": "unique_id_no_spaces", "label": "Short Name", "type": "concept" } ],
+    "edges": [ { "source": "unique_id_1", "target": "unique_id_2", "label": "relates_to" } ]
+}
+Return ONLY pure JSON string, no markdown codeblocks, no prefix.
+
+TRANSCRIPT:
+${transcript}`;
+
+        try {
+            const ai = new GoogleGenAI({ apiKey: geminiKey });
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: prompt
+            });
+            
+            let resText = response.text?.trim() || "";
+            resText = resText.replace(/```json/gi, '').replace(/```/g, '').trim();
+            
+            const data = JSON.parse(resText);
+            
+            await fetch('/api/memory', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+            
+            // Dispatch event for UI to refresh
+            window.dispatchEvent(new Event('memory-updated'));
+        } catch (e) {
+            console.error("Memory extraction failed", e);
+        }
+    }
 }

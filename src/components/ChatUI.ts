@@ -448,6 +448,9 @@ export class ChatUI {
             // 5. Stream complete, format finally and save history
             this.markdownWorker.postMessage({ id: typingId, text: finalResponse });
             await this.saveMessageToHistory('model', finalResponse);
+            
+            // 6. Background Concept Extraction
+            OrchestratorAPI.extractMemoryGraph(`USER PROMPT:\n${text}\n\nAGENT DEBATE FINAL:\n${finalResponse}`);
 
             const speakerBtn = document.getElementById(`speaker-btn-${typingId}`);
             if (speakerBtn) {

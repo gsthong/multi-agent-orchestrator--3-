@@ -27,6 +27,21 @@ db.exec(`
     idx INTEGER NOT NULL,
     FOREIGN KEY(sessionId) REFERENCES sessions(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS memory_nodes (
+    id TEXT PRIMARY KEY,
+    label TEXT NOT NULL,
+    type TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS memory_edges (
+    source TEXT NOT NULL,
+    target TEXT NOT NULL,
+    label TEXT NOT NULL,
+    PRIMARY KEY (source, target, label),
+    FOREIGN KEY(source) REFERENCES memory_nodes(id) ON DELETE CASCADE,
+    FOREIGN KEY(target) REFERENCES memory_nodes(id) ON DELETE CASCADE
+  );
 `);
 
 // GET /api/sessions -> Returns all sessions without messages (for sidebar)
@@ -103,6 +118,46 @@ app.delete('/api/sessions/:id', (req, res) => {
         db.prepare('DELETE FROM sessions WHERE id = ?').run(req.params.id);
         res.json({ success: true });
     } catch (e: any) {
+        res.status(500).json({ error: e.toString() });
+    }
+});
+
+// GET /api/memory
+app.get('/api/memory', (req, res) => {
+    try {
+        const nodes = db.prepare('SELECT * FROM memory_nodes').all();
+        const edges = db.prepare('SELECT * FROM memory_edges').all();
+        res.json({ nodes, edges });
+    } catch (e: any) {
+        res.status(500).json({ error: e.toString() });
+    }
+});
+
+// POST /api/memory -> Upsert nodes and edges
+app.post('/api/memory', (req, res) => {
+    try {
+        const { nodes, edges } = req.body;
+        const insertNode = db.prepare('INSERT OR REPLACE INTO memory_nodes (id, label, type) VALUES (?, ?, ?)');
+        const insertEdge = db.prepare('INSERT OR IGNORE INTO memory_edges (source, target, label) VALUES (?, ?, ?)');
+
+        const transaction = db.transaction(() => {
+            if (nodes && Array.isArray(nodes)) {
+                nodes.forEach((n: any) => insertNode.run(n.id, n.label, n.type || 'entity'));
+            }
+            if (edges && Array.isArray(edges)) {
+                edges.forEach((e: any) => {
+                    // Basic safeguard ensuring source and target ids are provided
+                    if(e.source && e.target && e.label) {
+                        insertEdge.run(e.source, e.target, e.label);
+                    }
+                });
+            }
+        });
+
+        transaction();
+        res.json({ success: true });
+    } catch (e: any) {
+        console.error("Memory Insert Error:", e);
         res.status(500).json({ error: e.toString() });
     }
 });
