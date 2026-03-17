@@ -279,6 +279,9 @@ export class OrchestratorAPI {
 
         const ai = new GoogleGenAI({ apiKey: geminiKey });
 
+        // Feature 20: Load any evolved system prompts from the DB
+        const evolvedPrompts = await this.loadEvolvedPrompts();
+
         // Get conversation history to provide context
         const session = await StorageUtils.getActiveHistory();
         let historyContext = "";
@@ -328,7 +331,11 @@ export class OrchestratorAPI {
             this.emitTelemetry('gemini', 0, 0, 'active');
             const startTime = performance.now();
             
-            const geminiInstruction = `You are GEMINI-PRIME, an elite lead analyst and architectural thinker. Provide a comprehensive, multi-dimensional ANALYSIS of the user's prompt. Break down the core intent, analyze constraints, and propose a clear, structured theoretical approach. Do NOT just give the final answer; your goal is to establish the absolute best foundational context and step-by-step logic for other agents to build upon. Be precise, logical, and highly structured.${formatModifier}${micPassingModifier}`;
+            // Use evolved prompt if one exists, fallback to default hardcoded prompt
+            const defaultGeminiInstruction = `You are GEMINI-PRIME, an elite lead analyst and architectural thinker. Provide a comprehensive, multi-dimensional ANALYSIS of the user's prompt. Break down the core intent, analyze constraints, and propose a clear, structured theoretical approach. Do NOT just give the final answer; your goal is to establish the absolute best foundational context and step-by-step logic for other agents to build upon. Be precise, logical, and highly structured.${formatModifier}${micPassingModifier}`;
+            const geminiInstruction = evolvedPrompts['gemini'] 
+                ? `${evolvedPrompts['gemini']}${formatModifier}${micPassingModifier}`
+                : defaultGeminiInstruction;
 
             let r1Output = '';
 
@@ -688,5 +695,86 @@ CRITICAL INSTRUCTIONS:
             0.3,
             'llama_report'
         );
+    }
+
+    /**
+     * Feature 20: Self-Evolving Prompts
+     * Analyzes the last N sessions for repeated failures, then asks Gemini
+     * to rewrite the GEMINI-PRIME system prompt to avoid the same mistakes.
+     * Saves the improved prompt to the backend DB.
+     */
+    static async evolvePrompts(): Promise<string> {
+        const geminiKey = StorageUtils.getApiKey();
+        if (!geminiKey) return 'No Gemini key.';
+
+        try {
+            // Fetch recent sessions to analyze
+            const sessionsRes = await fetch('/api/sessions');
+            const sessions: any[] = await sessionsRes.json();
+            const recentIds = sessions.slice(0, 5).map((s: any) => s.id);
+
+            let combinedTranscript = '';
+            for (const id of recentIds) {
+                const sRes = await fetch(`/api/sessions/${id}`);
+                const session = await sRes.json();
+                if (session.messages) {
+                    combinedTranscript += `\n\n--- SESSION: ${session.title} ---\n`;
+                    session.messages.slice(-6).forEach((m: any) => {
+                        combinedTranscript += `[${m.role.toUpperCase()}]: ${m.parts[0].text.substring(0, 500)}\n`;
+                    });
+                }
+            }
+
+            if (!combinedTranscript.trim()) return 'No sessions to analyze.';
+
+            const ai = new GoogleGenAI({ apiKey: geminiKey });
+
+            const prompt = `You are a meta-cognition engine for an elite AI orchestration system.
+Review the following recent conversation transcripts between users and AI agents.
+
+Your task:
+1. Identify patterns of agent failure: vague answers, missed context, repetitive disclaimers, incorrect assumptions.
+2. Rewrite the GEMINI-PRIME agent system prompt to be MORE effective, precise, and helpful in future sessions.
+3. The new system prompt MUST be a complete, standalone instruction (not a diff). Max 300 words.
+4. Output ONLY the new system prompt text. No intro, no explanation.
+
+RECENT TRANSCRIPTS:
+${combinedTranscript.substring(0, 4000)}`;
+
+            const res = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: prompt
+            });
+
+            const evolvedPrompt = res.text?.trim() || '';
+            if (!evolvedPrompt) return 'Evolution produced no output.';
+
+            // Persist the evolved prompt to the server
+            await fetch('/api/evolved-prompts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ agent: 'gemini', prompt: evolvedPrompt })
+            });
+
+            window.dispatchEvent(new CustomEvent('prompts-evolved', { detail: { agent: 'gemini', preview: evolvedPrompt.substring(0, 100) } }));
+            return evolvedPrompt;
+        } catch (e: any) {
+            console.error('Prompt evolution failed', e);
+            return 'Evolution failed: ' + e.message;
+        }
+    }
+
+    /**
+     * Loads any existing evolved prompts from the server DB.
+     * Returns a map of agent -> evolved system prompt override.
+     */
+    static async loadEvolvedPrompts(): Promise<Record<string, string>> {
+        try {
+            const res = await fetch('/api/evolved-prompts');
+            if (!res.ok) return {};
+            return await res.json();
+        } catch {
+            return {};
+        }
     }
 }

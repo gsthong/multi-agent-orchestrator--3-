@@ -1,9 +1,84 @@
 import express from 'express';
 import Database from 'better-sqlite3';
 import { resolve } from 'path';
+import { WebSocketServer, WebSocket } from 'ws';
+import { createServer } from 'http';
 
 const app = express();
 const port = 3001;
+const server = createServer(app);
+
+// --- Feature 18: Multi-Player WebSocket Server ---
+const wss = new WebSocketServer({ server });
+
+// rooms: Record<roomCode, Set<{ws, username}>>
+const rooms: Record<string, Set<{ws: WebSocket; username: string}>> = {};
+
+function broadcastToRoom(roomCode: string, data: object, excludeWs?: WebSocket) {
+    if (!rooms[roomCode]) return;
+    const msg = JSON.stringify(data);
+    rooms[roomCode].forEach(client => {
+        if (client.ws !== excludeWs && client.ws.readyState === WebSocket.OPEN) {
+            client.ws.send(msg);
+        }
+    });
+}
+
+wss.on('connection', (ws) => {
+    let currentRoom: string | null = null;
+    let currentUser: string | null = null;
+
+    ws.on('message', (raw) => {
+        try {
+            const msg = JSON.parse(raw.toString());
+
+            if (msg.type === 'join') {
+                const { room, username } = msg;
+                if (!room || !username) return;
+                if (!rooms[room]) rooms[room] = new Set();
+
+                currentRoom = room;
+                currentUser = username;
+                rooms[room].add({ ws, username });
+
+                // Notify others that someone joined
+                broadcastToRoom(room, {
+                    type: 'system',
+                    text: `${username} joined the room`,
+                    users: [...rooms[room]].map(c => c.username)
+                }, ws);
+
+                // Send confirmation to joiner
+                ws.send(JSON.stringify({
+                    type: 'joined',
+                    room,
+                    users: [...rooms[room]].map(c => c.username)
+                }));
+            }
+
+            if (msg.type === 'chat' && currentRoom && currentUser) {
+                broadcastToRoom(currentRoom, {
+                    type: 'chat',
+                    username: currentUser,
+                    text: msg.text,
+                    ts: Date.now()
+                }, ws);
+            }
+        } catch {}
+    });
+
+    ws.on('close', () => {
+        if (currentRoom && currentUser && rooms[currentRoom]) {
+            rooms[currentRoom].forEach(c => { if (c.ws === ws) rooms[currentRoom!].delete(c); });
+            broadcastToRoom(currentRoom, {
+                type: 'system',
+                text: `${currentUser} left the room`,
+                users: [...rooms[currentRoom]].map(c => c.username)
+            });
+        }
+    });
+});
+// -------------------------------------------------
 
 app.use(express.json({ limit: '50mb' }));
 
@@ -193,6 +268,6 @@ app.post('/api/evolved-prompts', (req, res) => {
     }
 });
 
-app.listen(port, () => {
+server.listen(port, () => {
     console.log(`Backend server listening at http://localhost:${port}`);
 });

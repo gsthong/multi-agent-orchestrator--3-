@@ -609,6 +609,11 @@ export class ChatUI {
             // 6. Background Concept Extraction
             OrchestratorAPI.extractMemoryGraph(`USER PROMPT:\n${text}\n\nAGENT DEBATE FINAL:\n${finalResponse}`);
 
+            // 7. Fire webhooks with debate result (Feature 16)
+            window.dispatchEvent(new CustomEvent('debate-complete', {
+                detail: { prompt: text, result: finalResponse }
+            }));
+
             const speakerBtn = document.getElementById(`speaker-btn-${typingId}`);
             if (speakerBtn) {
                 speakerBtn.classList.remove('hidden');
@@ -719,6 +724,43 @@ export class ChatUI {
         this.scrollToBottom();
     }
 
+    /**
+     * Feature 11: Branch conversation from a specific message.
+     * Forks the current session history up to (and including) the given user message
+     * into a brand new session, making it the active one.
+     */
+    public async branchFromMessage(userMessageText: string) {
+        const session = await StorageUtils.getActiveHistory();
+        const messages = session.messages;
+
+        // Find the last message index that matches the user input
+        let cutIdx = -1;
+        for (let i = messages.length - 1; i >= 0; i--) {
+            if (messages[i].role === 'user' && messages[i].parts[0].text === userMessageText) {
+                cutIdx = i;
+                break;
+            }
+        }
+
+        if (cutIdx === -1) return;
+
+        // Clone messages up to and including this user message
+        const forkedMessages = messages.slice(0, cutIdx + 1);
+
+        // Create a new branch session
+        const branchedSession = await StorageUtils.createNewSession(session.persona);
+        branchedSession.title = `🌿 Branch: ${userMessageText.substring(0, 30)}...`;
+        branchedSession.messages = forkedMessages;
+        await StorageUtils.saveSession(branchedSession);
+
+        // Load the branch as the active session
+        await this.loadSession(branchedSession.id);
+        window.dispatchEvent(new Event('session-title-updated'));
+
+        // Show a notification bubble
+        this.showErrorBubble(`🌿 Branched! You're now in an alternate timeline. Continue from here.`);
+    }
+
     private showWelcomeMessage() {
         this.appendMessage('model', "Hello! I am your AI Assistant. How can I help you today?");
     }
@@ -758,7 +800,15 @@ export class ChatUI {
 
         if (role === 'user') {
             bubbleWrapper.className = "text-sm p-3 rounded-lg border max-w-[85%] whitespace-pre-wrap bg-blue-600/20 shadow-lg shadow-blue-500/10 border-blue-500/30 text-blue-50 hover-glow transition-all";
-            bubbleWrapper.textContent = text; // User input is raw text, no markdown translation needed.
+            bubbleWrapper.textContent = text;
+            
+            // Branch button — forks a new session up to this message
+            const branchBtn = document.createElement('button');
+            branchBtn.className = 'mt-2 text-xs text-zinc-500 hover:text-emerald-400 transition flex items-center gap-1 opacity-0 group-hover/msg:opacity-100';
+            branchBtn.title = 'Branch conversation from this point';
+            branchBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="3" x2="6" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg> Branch here`;
+            branchBtn.addEventListener('click', () => this.branchFromMessage(text));
+            bubbleWrapper.appendChild(branchBtn);
         } else {
             const bubbleId = `history-msg-${Date.now()}-${Math.random().toString(36).substring(7)}`;
             bubbleWrapper.id = bubbleId;

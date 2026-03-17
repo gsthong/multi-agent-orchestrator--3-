@@ -1,5 +1,6 @@
 import { StorageUtils } from '../utils/storage';
 import { ChatUI } from './ChatUI';
+import { OrchestratorAPI } from '../api/orchestrator';
 
 export class Sidebar {
     private sidebarEl: HTMLElement | null;
@@ -8,6 +9,7 @@ export class Sidebar {
     private newChatBtn: HTMLButtonElement | null;
     private clearBtn: HTMLButtonElement | null;
     private generateReportBtn: HTMLButtonElement | null;
+    private evolvePromptsBtn: HTMLButtonElement | null;
     private personaSelect: HTMLSelectElement | null;
     private titleEl: HTMLElement | null;
     private themeToggleBtn: HTMLButtonElement | null;
@@ -22,6 +24,7 @@ export class Sidebar {
         this.newChatBtn = document.getElementById('new-chat-btn') as HTMLButtonElement;
         this.clearBtn = document.getElementById('clear-history-btn') as HTMLButtonElement;
         this.generateReportBtn = document.getElementById('generate-report-btn') as HTMLButtonElement;
+        this.evolvePromptsBtn = document.getElementById('evolve-prompts-btn') as HTMLButtonElement;
         this.personaSelect = document.getElementById('persona-selector') as HTMLSelectElement;
         this.titleEl = document.getElementById('mobile-header-title');
         this.themeToggleBtn = document.getElementById('theme-toggle-btn') as HTMLButtonElement;
@@ -90,6 +93,24 @@ export class Sidebar {
                 // If on mobile, close the sidebar so they can see it rendering
                 this.toggleSidebar(false);
                 await this.chatUI.generateAutoReport();
+            });
+        }
+
+        // Evolve Prompts (Feature 20)
+        if (this.evolvePromptsBtn) {
+            this.evolvePromptsBtn.addEventListener('click', async () => {
+                const btn = this.evolvePromptsBtn!;
+                const originalText = btn.innerHTML;
+                btn.innerHTML = `<svg class="animate-spin" xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56"></path></svg> Evolving...`;
+                btn.disabled = true;
+                try {
+                    await OrchestratorAPI.evolvePrompts();
+                    btn.innerHTML = `✅ Prompts Evolved!`;
+                    setTimeout(() => { btn.innerHTML = originalText; btn.disabled = false; }, 3000);
+                } catch (e: any) {
+                    btn.innerHTML = `❌ Failed`;
+                    setTimeout(() => { btn.innerHTML = originalText; btn.disabled = false; }, 2000);
+                }
             });
         }
 
