@@ -6,6 +6,7 @@ import { ChatUI } from './components/ChatUI';
 import { DashboardUI } from './components/DashboardUI';
 import { MatrixUI } from './components/MatrixUI';
 import { GraphUI } from './components/GraphUI';
+import { ScreenShareUI } from './components/ScreenShareUI';
 
 // The main application class
 class App {
@@ -16,11 +17,13 @@ class App {
     private dashboardUI: DashboardUI;
     private matrixUI: MatrixUI;
     private graphUI: GraphUI;
+    private screenShareUI: ScreenShareUI;
 
     constructor() {
+        this.screenShareUI = new ScreenShareUI();
         this.apiModal = new ApiModal();
         this.settingsModal = new SettingsModal();
-        this.chatUI = new ChatUI();
+        this.chatUI = new ChatUI(this.screenShareUI);
         this.sidebar = new Sidebar(this.chatUI);
         this.dashboardUI = new DashboardUI();
         this.matrixUI = new MatrixUI();

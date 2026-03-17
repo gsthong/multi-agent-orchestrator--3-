@@ -309,6 +309,17 @@ export class OrchestratorAPI {
             formatModifier = " [ROLEPLAY ENFORCED: RAPID BRAINSTORM. Ignore perfection. Throw out as many wild, creative, and unconstrained ideas as possible in a rapid-fire list format.]";
         }
 
+        // Check if a screen capture frame was attached
+        let screenImageBase64: string | null = null;
+        if (fileContext) {
+            const imgMatch = fileContext.match(/\[IMAGE_DATA:([A-Za-z0-9+/=]+)\]/);
+            if (imgMatch) {
+                screenImageBase64 = imgMatch[1];
+                // Remove from prompt text to keep it clean
+                fullPrompt = fullPrompt.replace(/\[IMAGE_DATA:[A-Za-z0-9+\/=]+\]/, '[Screenshot from user screen attached]');
+            }
+        }
+
         try {
             // -----------------------------------------------------
             // ROUND 1: GEMINI-PRIME (Lead Analyst)
@@ -320,7 +331,18 @@ export class OrchestratorAPI {
             const geminiInstruction = `You are GEMINI-PRIME, an elite lead analyst and architectural thinker. Provide a comprehensive, multi-dimensional ANALYSIS of the user's prompt. Break down the core intent, analyze constraints, and propose a clear, structured theoretical approach. Do NOT just give the final answer; your goal is to establish the absolute best foundational context and step-by-step logic for other agents to build upon. Be precise, logical, and highly structured.${formatModifier}${micPassingModifier}`;
 
             let r1Output = '';
-            let contents: any[] = [{ role: 'user', parts: [{ text: fullPrompt }] }];
+
+            // Build initial contents - include image if screen sharing is active
+            const userParts: any[] = [{ text: fullPrompt }];
+            if (screenImageBase64) {
+                userParts.push({
+                    inlineData: {
+                        mimeType: 'image/jpeg',
+                        data: screenImageBase64
+                    }
+                });
+            }
+            let contents: any[] = [{ role: 'user', parts: userParts }];
 
             while (true) {
                 const stream = await ai.models.generateContentStream({

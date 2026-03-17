@@ -1,5 +1,6 @@
 import { StorageUtils, Message } from '../utils/storage';
 import { OrchestratorAPI } from '../api/orchestrator';
+import { ScreenShareUI } from './ScreenShareUI';
 import Prism from 'prismjs';
 import 'prismjs/components/prism-javascript';
 import 'prismjs/components/prism-typescript';
@@ -30,9 +31,11 @@ export class ChatUI {
     private attachmentsContainer: HTMLElement | null;
     private audioContext: AudioContext | null = null;
     private pendingFiles: { name: string, content: string }[] = [];
+    private screenShare: ScreenShareUI | null = null;
     private pendingPythonExecutions: Map<string, { resolve: (val: string) => void, reject: (err: any) => void, output: string }> = new Map();
 
-    constructor() {
+    constructor(screenShare?: ScreenShareUI) {
+        this.screenShare = screenShare || null;
         this.containerEl = document.getElementById('chat-container');
         this.inputEl = document.getElementById('chat-input') as HTMLTextAreaElement;
         this.sendBtn = document.getElementById('send-btn') as HTMLButtonElement;
@@ -278,8 +281,13 @@ export class ChatUI {
         buttonEl.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="animate-pulse text-emerald-400"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>`;
 
         try {
+            // Read user's preferred TTS language from sidebar selector
+            const ttsLang = (document.getElementById('tts-language-selector') as HTMLSelectElement)?.value || 'en-US';
+            // Extract the 2-letter language code for Google TTS (e.g. "en-US" -> "en")
+            const ttsLangShort = ttsLang.split('-')[0];
+
             // Using a free TTS API to get audio data so we can route it through Web Audio API
-            const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(plainText.substring(0, 200))}&tl=en&client=tw-ob`;
+            const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(plainText.substring(0, 200))}&tl=${ttsLangShort}&client=tw-ob`;
             
             const response = await fetch(url);
             const arrayBuffer = await response.arrayBuffer();
@@ -316,6 +324,8 @@ export class ChatUI {
             // Fallback to native
             if ('speechSynthesis' in window) {
                 const utterance = new SpeechSynthesisUtterance(plainText);
+                const ttsLang = (document.getElementById('tts-language-selector') as HTMLSelectElement)?.value || 'en-US';
+                utterance.lang = ttsLang;
                 utterance.onend = () => { buttonEl.innerHTML = originalHtml; this.isAgentSpeaking = false; };
                 utterance.onerror = () => { buttonEl.innerHTML = originalHtml; this.isAgentSpeaking = false; };
                 window.speechSynthesis.speak(utterance);
@@ -571,6 +581,15 @@ export class ChatUI {
 
             // Read selected debate format
             const debateFormat = (document.getElementById('debate-format-selector') as HTMLSelectElement)?.value || 'standard';
+
+            // Capture screen share frame if active
+            let screenFrameBase64: string | null = null;
+            if (this.screenShare?.isSharing()) {
+                screenFrameBase64 = this.screenShare.getLatestFrame();
+                if (screenFrameBase64) {
+                    fileContextStr += `\n\n### SCREEN SHARE CONTEXT ###\nA screenshot of the user's screen has been captured. Analyze the screen content along with the user's prompt.\n[IMAGE_DATA:${screenFrameBase64}]\n###########################\n`;
+                }
+            }
 
             // Call the Orchestrator with fileContext included
             const finalResponse = await OrchestratorAPI.startDebate(

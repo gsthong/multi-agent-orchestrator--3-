@@ -42,6 +42,12 @@ db.exec(`
     FOREIGN KEY(source) REFERENCES memory_nodes(id) ON DELETE CASCADE,
     FOREIGN KEY(target) REFERENCES memory_nodes(id) ON DELETE CASCADE
   );
+
+  CREATE TABLE IF NOT EXISTS evolved_prompts (
+    agent TEXT PRIMARY KEY,
+    prompt TEXT NOT NULL,
+    updatedAt INTEGER NOT NULL
+  );
 `);
 
 // GET /api/sessions -> Returns all sessions without messages (for sidebar)
@@ -158,6 +164,31 @@ app.post('/api/memory', (req, res) => {
         res.json({ success: true });
     } catch (e: any) {
         console.error("Memory Insert Error:", e);
+        res.status(500).json({ error: e.toString() });
+    }
+});
+
+// GET /api/evolved-prompts -> Returns all evolved agent prompts
+app.get('/api/evolved-prompts', (req, res) => {
+    try {
+        const prompts = db.prepare('SELECT * FROM evolved_prompts').all();
+        const result: Record<string, string> = {};
+        (prompts as any[]).forEach((p: any) => { result[p.agent] = p.prompt; });
+        res.json(result);
+    } catch (e: any) {
+        res.status(500).json({ error: e.toString() });
+    }
+});
+
+// POST /api/evolved-prompts -> Upsert a single agent's evolved prompt
+app.post('/api/evolved-prompts', (req, res) => {
+    try {
+        const { agent, prompt } = req.body;
+        if (!agent || !prompt) return res.status(400).json({ error: 'agent and prompt required' });
+        db.prepare('INSERT OR REPLACE INTO evolved_prompts (agent, prompt, updatedAt) VALUES (?, ?, ?)')
+            .run(agent, prompt, Date.now());
+        res.json({ success: true });
+    } catch (e: any) {
         res.status(500).json({ error: e.toString() });
     }
 });
