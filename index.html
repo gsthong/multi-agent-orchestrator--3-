@@ -106,6 +106,21 @@
           <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
           👥 Multi-Player
         </button>
+        <button id="open-canvas-btn"
+          class="w-full bg-zinc-800 hover:bg-emerald-900/40 text-zinc-300 hover:text-emerald-300 text-sm font-medium py-2 px-4 rounded-lg transition mb-3 flex justify-center items-center gap-2" title="Visualize ideas on an infinite canvas">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M9 21V9"/></svg>
+          🎨 Infinite Canvas
+        </button>
+        <button id="open-sandbox-btn"
+          class="w-full bg-zinc-800 hover:bg-emerald-900/40 text-zinc-300 hover:text-emerald-300 text-sm font-medium py-2 px-4 rounded-lg transition mb-3 flex justify-center items-center gap-2" title="Experiment with code in a live sandbox">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 18l6-6-6-6M8 6l-6 6 6 6"/></svg>
+          💻 Code Sandbox
+        </button>
+        <button id="open-browser-btn"
+          class="w-full bg-zinc-800 hover:bg-blue-900/40 text-zinc-300 hover:text-blue-300 text-sm font-medium py-2 px-4 rounded-lg transition mb-3 flex justify-center items-center gap-2" title="Autonomous agent browsing simulation">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
+          🌐 Web Browser
+        </button>
         <button id="clear-history-btn"
           class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-sm font-medium py-2 px-4 rounded-lg transition mb-3">
           Clear History
@@ -239,6 +254,141 @@
           </button>
         </div>
         <div id="webhook-list" class="space-y-2 max-h-64 overflow-y-auto"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Multi-Player Collaboration Panel -->
+  <div id="multiplayer-panel" class="hidden fixed inset-0 bg-black/70 backdrop-blur z-50 items-center justify-center">
+    <div class="bg-zinc-900 border border-zinc-700 w-full max-w-md mx-4 rounded-xl shadow-2xl flex flex-col overflow-hidden">
+      <div class="p-4 border-b border-zinc-800 flex justify-between items-center bg-black/30">
+        <h3 class="text-sm font-bold text-zinc-100 uppercase tracking-widest flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+          Multi-Player Collaboration
+        </h3>
+        <button id="close-multiplayer-btn" class="text-zinc-400 hover:text-white">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <div class="p-4" id="mp-join-form">
+        <p class="text-xs text-zinc-400 mb-4">Join a room to collaborate in real-time with other humans and agents.</p>
+        <div class="space-y-3">
+          <input id="mp-room-input" type="text" placeholder="Room Code (e.g. ALPHA-7)" class="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          <input id="mp-username-input" type="text" placeholder="Your Name" class="w-full bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          <button id="mp-join-btn" class="w-full bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold px-3 py-2 rounded-lg transition" title="Joining a room enables real-time collaboration with others">
+            Join Room
+          </button>
+        </div>
+      </div>
+      <div class="p-4 hidden flex-col h-[400px]" id="mp-chat-area">
+        <div id="mp-user-list" class="flex flex-wrap gap-2 mb-3 border-b border-zinc-800 pb-3"></div>
+        <div id="mp-chat" class="flex-1 overflow-y-auto space-y-2 mb-3 pr-2 scrollbar-thin"></div>
+        <div class="flex gap-2">
+          <input id="mp-message-input" type="text" placeholder="Type a message..." class="flex-1 bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500" />
+          <button id="mp-send-btn" class="bg-blue-600 hover:bg-blue-500 text-white px-3 py-2 rounded-lg transition">
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Infinite Canvas / Spatial Whiteboard Panel -->
+  <div id="canvas-panel" class="fixed inset-0 bg-zinc-950 z-[60] flex flex-col hidden overflow-hidden">
+    <div class="absolute top-4 left-4 z-[70] flex gap-2">
+      <button id="close-canvas-btn" class="bg-zinc-800/80 hover:bg-zinc-700 text-white p-2 rounded-lg backdrop-blur-md border border-zinc-700/50 shadow-xl transition-all">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+      <div class="bg-zinc-800/80 backdrop-blur-md border border-zinc-700/50 px-4 py-2 rounded-lg flex items-center gap-3 shadow-xl">
+        <h3 class="text-xs font-bold text-zinc-100 uppercase tracking-widest">Infinite Canvas</h3>
+        <div class="h-4 w-px bg-zinc-700"></div>
+        <button id="add-sticky-btn" class="text-[10px] font-bold text-emerald-400 hover:text-emerald-300 uppercase tracking-wider transition-colors">
+          + Add Sticky Note
+        </button>
+      </div>
+    </div>
+    
+    <div id="canvas-viewport" class="relative flex-1 cursor-crosshair overflow-hidden touch-none">
+       <div id="canvas-content" class="absolute inset-0 origin-top-left will-change-transform">
+          <!-- Cards go here -->
+       </div>
+    </div>
+    
+    <div class="absolute bottom-4 left-4 z-[70] bg-black/30 backdrop-blur-sm px-3 py-1.5 rounded-full text-[10px] text-zinc-500 font-medium pointer-events-none">
+      Middle Click to Pan • Scroll to Zoom • Drag Cards to Organize
+    </div>
+  </div>
+
+  <!-- Live Code Sandbox Panel -->
+  <div id="sandbox-panel" class="fixed inset-0 bg-zinc-950 z-[60] flex flex-col hidden overflow-hidden">
+    <div class="h-12 bg-zinc-900 border-b border-zinc-700 flex justify-between items-center px-4">
+      <div class="flex items-center gap-4">
+        <button id="close-sandbox-btn" class="text-zinc-400 hover:text-white transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+        <h3 class="text-xs font-bold text-zinc-100 uppercase tracking-widest flex items-center gap-2">
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-400"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+          Live Code Sandbox
+        </h3>
+      </div>
+      <div class="flex gap-2">
+        <button id="run-sandbox-btn" class="bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold uppercase px-3 py-1.5 rounded-lg transition-all shadow-lg shadow-emerald-600/20">
+          Run Code
+        </button>
+      </div>
+    </div>
+    <div class="flex flex-1 overflow-hidden">
+      <!-- File Explorer / Editor -->
+      <div class="w-1/2 flex flex-col border-r border-zinc-800 bg-zinc-900/50">
+        <div class="flex bg-black/40 border-b border-zinc-800 p-1">
+          <button class="sandbox-tab text-[10px] font-bold px-3 py-1.5 rounded transition bg-zinc-700 text-white" data-file="index.html">index.html</button>
+          <button class="sandbox-tab text-[10px] font-bold px-3 py-1.5 rounded transition text-zinc-400 hover:text-zinc-200" data-file="script.js">script.js</button>
+          <button class="sandbox-tab text-[10px] font-bold px-3 py-1.5 rounded transition text-zinc-400 hover:text-zinc-200" data-file="style.css">style.css</button>
+        </div>
+        <textarea id="sandbox-editor" spellcheck="false" class="flex-1 bg-transparent text-zinc-300 font-mono text-xs p-4 focus:outline-none resize-none scrollbar-thin"></textarea>
+      </div>
+      <!-- Preview -->
+      <div class="w-1/2 flex flex-col bg-white">
+        <iframe id="sandbox-preview" class="w-full h-full border-none"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <!-- Active Web-Browsing Control Panel -->
+  <div id="browser-panel" class="fixed inset-0 bg-zinc-950 z-[60] flex flex-col hidden overflow-hidden">
+    <div class="h-12 bg-zinc-900 border-b border-zinc-700 flex justify-between items-center px-4">
+      <div class="flex items-center gap-4 flex-1">
+        <button id="close-browser-btn" class="text-zinc-400 hover:text-white transition-colors">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+        <div class="flex items-center gap-2 bg-black/40 border border-zinc-700 rounded-lg px-3 py-1 flex-1 max-w-2xl">
+           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-zinc-500"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+           <input id="browser-url-input" type="text" placeholder="Search or enter URL..." class="bg-transparent border-none text-xs text-zinc-300 w-full focus:outline-none" />
+           <button id="browser-go-btn" class="text-zinc-400 hover:text-blue-400 transition-colors">
+             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"></polyline></svg>
+           </button>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 px-4">
+         <div class="h-2 w-2 bg-emerald-500 rounded-full animate-pulse shadow-green-500/50 shadow-lg"></div>
+         <span class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Active session</span>
+      </div>
+    </div>
+    <div class="flex flex-1 overflow-hidden">
+      <!-- Browser Sidebar -->
+      <div class="w-64 bg-zinc-900 border-r border-zinc-800 p-4 overflow-y-auto scrollbar-thin">
+        <h4 class="text-[10px] font-bold text-zinc-500 uppercase tracking-widest mb-4">Browsing History</h4>
+        <div id="browser-history" class="space-y-3">
+           <!-- History goes here -->
+           <div class="text-[10px] text-zinc-600 italic">No history yet. Start browsing to see logs.</div>
+        </div>
+      </div>
+      <!-- Browser Viewport -->
+      <div class="flex-1 bg-zinc-900 overflow-y-auto" id="browser-content">
+         <div class="flex flex-col items-center justify-center h-full opacity-30 select-none">
+            <svg class="w-16 h-16 mb-4 text-zinc-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" /></svg>
+            <p class="text-sm font-medium text-zinc-500">The agent is waiting for a command to navigate.</p>
+         </div>
       </div>
     </div>
   </div>

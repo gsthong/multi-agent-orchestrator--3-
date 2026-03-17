@@ -8,6 +8,10 @@ import { MatrixUI } from './components/MatrixUI';
 import { GraphUI } from './components/GraphUI';
 import { ScreenShareUI } from './components/ScreenShareUI';
 import { WebhookUI } from './components/WebhookUI';
+import { MultiPlayerUI } from './components/MultiPlayerUI';
+import { CanvasUI } from './components/CanvasUI';
+import { SandboxUI } from './components/SandboxUI';
+import { BrowserUI } from './components/BrowserUI';
 
 // The main application class
 class App {
@@ -20,10 +24,18 @@ class App {
     private graphUI: GraphUI;
     private screenShareUI: ScreenShareUI;
     private webhookUI: WebhookUI;
+    private multiPlayerUI: MultiPlayerUI;
+    private canvasUI: CanvasUI;
+    private sandboxUI: SandboxUI;
+    private browserUI: BrowserUI;
 
     constructor() {
         this.screenShareUI = new ScreenShareUI();
         this.webhookUI = new WebhookUI();
+        this.multiPlayerUI = new MultiPlayerUI();
+        this.canvasUI = new CanvasUI();
+        this.sandboxUI = new SandboxUI();
+        this.browserUI = new BrowserUI();
         this.apiModal = new ApiModal();
         this.settingsModal = new SettingsModal();
         this.chatUI = new ChatUI(this.screenShareUI);
